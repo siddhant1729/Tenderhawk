@@ -297,8 +297,8 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 | # | Task | Owner | Notes |
 |---|---|---|---|
 | C1 | ✅ **Live GeM document text** (2026-10-24): Fetch → else direct PDF download in `agents/`; verified live on `showbidDocument/9845350` (19,776 chars, `source=direct`). The agent route was tried and can't read PDFs (§1) | Siddhant | done |
-| C2 | **CPPP + Haryana live runs.** Never run live; goals may need fixing after the first run (captcha → clean `error` card with portal link). Also confirm the 30-step / 300 s cap ends a run cleanly. | Siddhant | billed agent runs; keep to 1 each |
-| C3 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | after fixtures |
+| C2 | ✅ **CPPP + Haryana live runs** (2026-10-25): CPPP 3 bids (documents only behind expiring session links → CHECK_DOCS + stable list link); Haryana blocked by captcha after 26 steps → error card with portal link, replayed from its fixture. Cap: custom steps rejected, 300 s is soft → `AGENT_TIMEOUT` 330 s | Siddhant | done |
+| C3 | ✅ Corrigenda checked for all 12 recorded bids: none real, so no fixture (the 4th card replays "0 new"). Matcher false positives fixed | Siddhant | done |
 | C4 | Optional, cut first: email via `SMTP_URL` (code done, needs an SMTP account, e.g. a Gmail app password) | Vandan | |
 
 Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text layer), real embeddings (no OpenAI key; keyword overlap is enough), Browser API (phase 2).
@@ -306,9 +306,9 @@ Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text la
 ### Left to do (setup, data, rehearsal)
 | # | Task | Owner | Blocked on |
 |---|---|---|---|
-| S1 | Get the stack running on the demo laptop: Docker Desktop's WSL integration is off (`docker` not found), so Postgres/Redis aren't running and 2 alert tests fail; `web/node_modules` isn't installed (`cd web && npm install`) | Siddhant | — |
-| S2 | **Record real fixtures**: `gem_storage_rack.json` first (live run `python -m agents.cli gem "storage rack" --record`), save the bid PDFs from a browser, `delivery.build_fixture attach … --parse`, then `check` = "fixture OK". Then CPPP + Haryana. The current `gem_steel_rack.json` is unusable (unrelated, closed bids) | Vandan + Siddhant | S1 |
-| S3 | Parse 3 more real GeM docs (2 of 5 done) and check the clauses | Harsh | S2 |
+| S1 | 🟡 Web done (`npm install`, 19 tests, `npm run build`). **Docker Desktop isn't running** (`docker-desktop` WSL distro stopped): start it, enable WSL integration for Ubuntu, then `docker compose up -d`, `alembic upgrade head`, `python -m delivery.seed --reset` | Siddhant | a human at the Windows desktop |
+| S2 | ✅ Real fixtures: `gem_storage_rack`, `cppp_storage_rack`, `haryana_storage_rack`, `gem_steel_almirah`, all "fixture OK". **No NOT_ELIGIBLE from real data** (1 ELIGIBLE, 11 CHECK_DOCS) | Vandan + Siddhant | — |
+| S3 | 🟡 3 of 5 real GeM docs parsed with verbatim clauses (NIT Warangal rack, IIM Indore, GeM 9998812) | Harsh | — |
 | S4 | Twilio sandbox (free trial): `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | account, phone |
 | S5 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | S2, S4 |
 | S6 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | S5 |
