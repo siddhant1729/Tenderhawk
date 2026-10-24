@@ -22,3 +22,11 @@ class ProfileOut(ProfileIn):
 
 class Created(BaseModel):
     id: int
+
+
+class SweepIn(BaseModel):
+    profile_id: int
+
+
+class SweepOut(BaseModel):
+    sweep_id: str
