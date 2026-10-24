@@ -69,11 +69,15 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
       try { ev = JSON.parse(msg.data); } catch { return; }
       setLost(false);
       dispatch({ type: "event", ev });
-      if (ev.agent === "all" && ev.type === "done") {
+      if (ev.agent !== "all") return;
+      // all/done frees the Sweep button; with documents still pending the stream stays open for
+      // all/update (a match changed: reload the list) until all/settled.
+      const last = ev.type === "settled" || (ev.type === "done" && !ev.pending);
+      if (ev.type === "done" || ev.type === "update" || last) loadMatches();
+      if (ev.type === "done") setFollowing(false);
+      if (last) {
         es.close();
-        setFollowing(false);
         remember(storeKey(profileId), null);
-        loadMatches();
       }
     };
     // EventSource reconnects by itself and the server replays the log; just tell the user meanwhile.

@@ -205,6 +205,12 @@ function onEvent(ev) {
     const pl = document.getElementById("pipeline");
     if (ev.type === "done") {
       pl.innerHTML = "<b>Done.</b> " + esc(ev.message);
+      finishSweep(!!ev.pending);  // documents still pending: keep listening for update/settled
+    } else if (ev.type === "update") {
+      pl.innerHTML = "<b>Still reading:</b> " + esc(ev.message) + "…";
+      loadMatches();
+    } else if (ev.type === "settled") {
+      pl.innerHTML = "<b>Done.</b> " + esc(ev.message) + ".";
       finishSweep();
     } else if (ev.type === "error") {
       pl.innerHTML = `<span class="err">${esc(ev.message)}</span>`;
@@ -238,7 +244,7 @@ async function startSweep() {
     es = new EventSource(API + "/sweeps/" + encodeURIComponent(sweep_id) + "/events");
     es.onmessage = m => {
       const ev = JSON.parse(m.data);
-      if (ev.agent === "all" && ev.type === "done") finished = true;
+      if (ev.agent === "all" && (ev.type === "settled" || (ev.type === "done" && !ev.pending))) finished = true;
       onEvent(ev);
     };
     es.onerror = () => {
@@ -250,8 +256,8 @@ async function startSweep() {
     finishSweep();
   }
 }
-function finishSweep() {
-  if (es) { es.close(); es = null; }
+function finishSweep(keepListening) {
+  if (es && !keepListening) { es.close(); es = null; }
   const btn = document.getElementById("sweep");
   btn.disabled = false; btn.textContent = "Sweep now";
   loadMatches();

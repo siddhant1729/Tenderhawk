@@ -50,10 +50,21 @@ def stub_groq(monkeypatch):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["content-length"])))
             seen.append({"path": self.path, "body": body})
+            text = replies.pop(0)
+            if text.startswith("!"):  # "!429" / "!503": an error status, retry-after 0 so tests stay fast
+                code = int(text[1:4])
+                out = json.dumps({"error": {"message": f"stub {code}", "type": "rate_limit_exceeded"}}).encode()
+                self.send_response(code)
+                self.send_header("content-type", "application/json")
+                self.send_header("retry-after", "0")
+                self.send_header("content-length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+                return
             out = json.dumps({
                 "id": "chatcmpl-stub", "object": "chat.completion", "created": 0, "model": body["model"],
                 "choices": [{"index": 0, "finish_reason": "stop",
-                             "message": {"role": "assistant", "content": replies.pop(0)}}],
+                             "message": {"role": "assistant", "content": text}}],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
             }).encode()
             self.send_response(200)
@@ -121,3 +132,23 @@ def test_groq_retry_recovers(stub_groq):
     replies.extend(["not json", json.dumps(GOOD)])
     assert asyncio.run(parse_eligibility("doc"))["emd_amount"]["value"] == 100000
     assert len(seen) == 2
+
+
+def test_groq_429_is_retried_by_the_sdk_then_succeeds(stub_groq):
+    from api.eligibility import parse_eligibility
+    seen, replies = stub_groq
+    replies.extend(["!429", "!429", json.dumps(GOOD)])
+    assert asyncio.run(parse_eligibility("doc"))["emd_amount"]["value"] == 100000
+    assert len(seen) == 3
+
+
+@pytest.mark.parametrize("status,msg", [("!429", "rate limit"), ("!503", "503")])
+def test_groq_persistent_errors_become_llmerror(stub_groq, monkeypatch, status, msg):
+    from api import llm
+    from api.eligibility import parse_eligibility
+    seen, replies = stub_groq
+    monkeypatch.setattr(llm, "_client", None)
+    monkeypatch.setattr(llm, "LLM_MAX_RETRIES", 1)
+    replies.extend([status] * 10)
+    with pytest.raises(llm.LLMError, match=msg):
+        asyncio.run(parse_eligibility("doc"))

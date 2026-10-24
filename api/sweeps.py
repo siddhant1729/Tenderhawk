@@ -3,6 +3,11 @@
 Each portal card in the UI gets one started -> steps -> result|error sequence, even though a portal
 is searched once per keyword: per-keyword started/result/error events are folded into steps.
 Nothing in here may raise out of run_sweep: one bad portal or document never sinks the sweep.
+
+A live sweep must finish on stage, so all/done fires once listings, already-known documents (same doc_url in
+the DB or a fixture) and corrigenda are matched. Documents never seen before are then read and parsed in
+the background (Groq free tier: one at a time); each one re-matches its tender and publishes all/update,
+and all/settled closes the stream.
 """
 import asyncio
 import json
@@ -21,8 +26,8 @@ from api.events import publish
 from api.matching import rematch
 from api.models import Profile
 from delivery.alerts import auto_alert
-from api.tenders import (save_doc_text, save_eligibility, tenders_missing_eligibility, tenders_missing_text,
-                         upsert_tenders)
+from api.tenders import (bid_numbers, known_documents, save_doc_text, save_eligibility, tenders_missing_eligibility,
+                         tenders_missing_text, tenders_needing_documents, upsert_tenders)
 
 log = logging.getLogger("api.sweeps")
 DOC_FETCH_CONCURRENCY = 4
@@ -99,8 +104,8 @@ async def _fetch_docs(sweep_id: str, tender_ids: list[int]) -> int:
     return sum(await asyncio.gather(*(one(t, u) for t, u in todo)))
 
 
-def _fixture_eligibility() -> dict[str, dict]:
-    """Recorded parses ({doc_url: eligibility}) so FALLBACK_MODE works without the LLM."""
+def _fixture_documents() -> dict[str, dict]:
+    """Recorded document texts and parses ({doc_url: {...}}), reused in live and fallback mode."""
     out: dict[str, dict] = {}
     for p in FIXTURES_DIR.glob("*.json"):
         try:
@@ -108,34 +113,81 @@ def _fixture_eligibility() -> dict[str, dict]:
         except (OSError, ValueError):
             log.warning("unreadable fixture %s", p)
             continue
-        if isinstance(data, dict):
-            out.update(data.get("eligibility") or {})
+        if not isinstance(data, dict):
+            continue
+        parses = data.get("eligibility") or {}
+        for url, text in (data.get("docs") or {}).items():
+            if text:
+                out[url] = {"text": text, "doc_source": "fixture", "eligibility": parses.get(url),
+                            "eligibility_source": "recorded" if parses.get(url) else None}
     return out
 
 
-async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
-    """Eligibility for every tender that has text but no parse yet. Failures leave it null (-> CHECK_DOCS)."""
+async def _reuse_known_documents(tender_ids: list[int]) -> int:
+    """Fill text + parse from an earlier read of the same doc_url (DB first, then fixtures). Returns how many."""
+    rows = await asyncio.to_thread(tenders_needing_documents, tender_ids)
+    if not rows:
+        return 0
+    known = {**await asyncio.to_thread(_fixture_documents),
+             **await asyncio.to_thread(known_documents, [u for _, u, _ in rows])}
+    reused = 0
+    for tid, url, has_text in rows:
+        k = known.get(url)
+        if not k:
+            continue
+        try:
+            if not has_text:
+                await asyncio.to_thread(save_doc_text, tid, k["text"], k["doc_source"])
+            if k["eligibility"] is not None:
+                await asyncio.to_thread(save_eligibility, tid, k["eligibility"], k["eligibility_source"])
+                reused += 1
+        except Exception as e:
+            log.warning("reusing the known document for tender %s failed: %r", tid, e)
+    return reused
+
+
+async def _parse_docs(sweep_id: str, tender_ids: list[int], on_parsed=None) -> int:
+    """Eligibility for every tender that has text but no parse yet. Failures leave it null (-> CHECK_DOCS).
+
+    on_parsed(tender_id) runs after each successful parse (re-match + update event)."""
     todo = await asyncio.to_thread(tenders_missing_eligibility, tender_ids)
     if not todo:
         return 0
     publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
                       message=f"Reading eligibility criteria from {len(todo)} documents"))
-    recorded = await asyncio.to_thread(_fixture_eligibility) if fallback_mode() else {}
     sem = asyncio.Semaphore(llm.LLM_CONCURRENCY)
 
     async def one(tid: int, doc_url: str | None, text: str) -> bool:
         try:
-            el, source = recorded.get(doc_url or ""), "recorded"
-            if el is None:
-                async with sem:
-                    el, source = await asyncio.wait_for(parse_eligibility(text), PARSE_TIMEOUT), "llm"
-            await asyncio.to_thread(save_eligibility, tid, el, source)
-            return True
-        except Exception as e:  # LLMError, timeout, DB error: this tender stays unparsed -> CHECK_DOCS
+            async with sem:
+                el = await asyncio.wait_for(parse_eligibility(text), PARSE_TIMEOUT)
+            await asyncio.to_thread(save_eligibility, tid, el, "llm")
+        except Exception as e:  # LLMError (incl. Groq 429/5xx), timeout, DB error: stays unparsed -> CHECK_DOCS
             log.warning("eligibility parse failed for tender %s: %r", tid, e)
             return False
+        if on_parsed:
+            try:
+                await on_parsed(tid)
+            except Exception:
+                log.exception("re-match after parsing tender %s failed", tid)
+        return True
 
     return sum(await asyncio.gather(*(one(*row) for row in todo)))
+
+
+async def _read_new_documents(sweep_id: str, profile_id: int, tender_ids: list[int]) -> tuple[int, int]:
+    """Background part of a sweep: fetch + parse documents never seen before, re-matching as each lands."""
+    names = await asyncio.to_thread(bid_numbers, tender_ids)
+
+    async def updated(tid: int) -> None:
+        m = await rematch(profile_id, [tid], only=True)
+        verdict = next(iter(m["counts"]), None)
+        publish(StepEvent(sweep_id=sweep_id, agent="all", type="update", tender_id=tid,
+                          message=f"Read eligibility for {names.get(tid, tid)}" + (f": {verdict}" if verdict else "")))
+
+    read = await _fetch_docs(sweep_id, tender_ids)
+    parsed = await _parse_docs(sweep_id, tender_ids, on_parsed=updated)
+    return read, parsed
 
 
 async def _auto_alert(sweep_id: str, profile_id: int) -> int:
@@ -151,8 +203,9 @@ async def _auto_alert(sweep_id: str, profile_id: int) -> int:
 
 
 async def run_sweep(sweep_id: str, profile_id: int) -> None:
-    """Background task for POST /sweeps. Never raises; always ends with exactly one all/done event."""
-    summary = "Sweep failed"
+    """Background task for POST /sweeps. Never raises; always ends with exactly one all/done event,
+    followed by all/settled when documents were left to read in the background (pending > 0)."""
+    summary, pending = "Sweep failed", []
     try:
         keywords = await asyncio.to_thread(_load_keywords, profile_id)
         if not keywords:
@@ -167,9 +220,6 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
         bids = [b for bs in per_portal for b in bs]
         all_ids, new_ids = await asyncio.to_thread(upsert_tenders, bids)
 
-        async def documents() -> tuple[int, int]:
-            return await _fetch_docs(sweep_id, all_ids), await _parse_docs(sweep_id, all_ids)
-
         async def corrigenda() -> dict:
             try:
                 return await check_corrigenda(all_ids, corr_card)
@@ -178,21 +228,41 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
                 corr_card("error", f"Corrigenda check failed: {e}", None)
                 return {"new": 0}
 
-        (read, parsed), corr = await asyncio.gather(documents(), corrigenda())
+        reused, corr = await asyncio.gather(_reuse_known_documents(all_ids), corrigenda())
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
                           message="Matching tenders against your profile"))
         m = await rematch(profile_id)
         c = m["counts"]
         alerts = await _auto_alert(sweep_id, profile_id)
+        pending = [tid for tid, _, _ in await asyncio.to_thread(tenders_needing_documents, all_ids)]
         low = m["total"] - m["relevant"]
-        summary = (f"{len(all_ids)} tenders found ({len(new_ids)} new), {read} documents read, {parsed} parsed. "
+        summary = (f"{len(all_ids)} tenders found ({len(new_ids)} new), {reused} with known eligibility. "
                    f"{c.get('ELIGIBLE', 0)} eligible, {c.get('CHECK_DOCS', 0)} check docs, "
                    f"{c.get('NOT_ELIGIBLE', 0)} not eligible"
                    + (f", {low} low-relevance hidden" if low else "")
                    + (f". {corr['new']} new corrigenda" if corr.get("new") else "")
-                   + (f". {alerts} alert{'s' if alerts != 1 else ''} sent" if alerts else ""))
+                   + (f". {alerts} alert{'s' if alerts != 1 else ''} sent" if alerts else "")
+                   + (f". Reading {len(pending)} new document{'s' if len(pending) != 1 else ''} in the background"
+                      if pending else ""))
     except Exception as e:
         log.exception("sweep %s failed", sweep_id)
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="error", message=f"Sweep failed: {e}"))
+        pending = []
     finally:
-        publish(StepEvent(sweep_id=sweep_id, agent="all", type="done", message=summary))
+        publish(StepEvent(sweep_id=sweep_id, agent="all", type="done", message=summary, pending=len(pending)))
+    if pending:
+        await _settle(sweep_id, profile_id, pending)
+
+
+async def _settle(sweep_id: str, profile_id: int, pending: list[int]) -> None:
+    """After all/done: read the new documents, then one all/settled. Never raises."""
+    message = "Background reading failed"
+    try:
+        read, parsed = await _read_new_documents(sweep_id, profile_id, pending)
+        alerts = await _auto_alert(sweep_id, profile_id)
+        message = (f"{read} new document{'s' if read != 1 else ''} read, {parsed} parsed"
+                   + (f". {alerts} alert{'s' if alerts != 1 else ''} sent" if alerts else ""))
+    except Exception:
+        log.exception("background reading for sweep %s failed", sweep_id)
+    finally:
+        publish(StepEvent(sweep_id=sweep_id, agent="all", type="settled", message=message))

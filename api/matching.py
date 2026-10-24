@@ -42,18 +42,20 @@ async def ensure_embeddings(profile_id: int, tender_ids: list[int]) -> int:
     return len(todo)
 
 
-def match_profile(profile_id: int) -> dict:
-    """Evaluate every tender for this profile. Returns verdict counts and ids of newly created matches."""
+def match_profile(profile_id: int, only: list[int] | None = None) -> dict:
+    """Evaluate every tender (or just `only`) for this profile. Returns verdict counts and new match ids."""
     with SessionLocal() as db:
         p = db.get(Profile, profile_id)
         facts = ProfileFacts(p.annual_turnover, p.years_in_business, p.certifications or [], p.states_served or [])
-        tenders = db.scalars(select(Tender)).all()
+        q = select(Tender) if only is None else select(Tender).where(Tender.id.in_(only))
+        tenders = db.scalars(q).all()
         if not tenders:
             return {"counts": {}, "new_match_ids": []}
 
         use_cosine = p.embedding is not None and all(t.embedding is not None for t in tenders)
         if use_cosine:
-            rows = db.execute(select(Tender.id, (1 - Tender.embedding.cosine_distance(p.embedding)).label("fit")))
+            rows = db.execute(select(Tender.id, (1 - Tender.embedding.cosine_distance(p.embedding)).label("fit"))
+                              .where(Tender.id.in_([t.id for t in tenders])))
             fits = {r.id: round(float(r.fit), 3) for r in rows}
             threshold = MIN_FIT_COSINE
         else:
@@ -87,8 +89,8 @@ def _all_tender_ids() -> list[int]:
         return list(db.scalars(select(Tender.id)))
 
 
-async def rematch(profile_id: int, tender_ids: list[int] | None = None) -> dict:
-    if tender_ids is None:
-        tender_ids = await asyncio.to_thread(_all_tender_ids)
-    await ensure_embeddings(profile_id, tender_ids)
-    return await asyncio.to_thread(match_profile, profile_id)
+async def rematch(profile_id: int, tender_ids: list[int] | None = None, *, only: bool = False) -> dict:
+    """Match the profile against all tenders, or with only=True just `tender_ids` (a late document parse)."""
+    ids = tender_ids if tender_ids is not None else await asyncio.to_thread(_all_tender_ids)
+    await ensure_embeddings(profile_id, ids)
+    return await asyncio.to_thread(match_profile, profile_id, ids if only else None)

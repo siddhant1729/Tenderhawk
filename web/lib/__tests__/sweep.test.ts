@@ -50,3 +50,18 @@ describe("a sweep that ends early", () => {
     expect(s.finished).toBe(true);
   });
 });
+
+describe("documents read after the sweep is done", () => {
+  it("finishes on done, shows background progress, and clears it on settled", () => {
+    const base = LOG.slice(0, -1);
+    const done = [...base, ev("all", "done", 0, "7 tenders found", { pending: 2 })].reduce(applyEvent, initialSweep());
+    expect(done).toMatchObject({ finished: true, background: "Reading 2 new documents in the background" });
+
+    const upd = applyEvent(done, ev("all", "update", 0, "Read eligibility for GEM/2026/B/8: ELIGIBLE", { tender_id: 8 }));
+    expect(upd.background).toBe("Read eligibility for GEM/2026/B/8: ELIGIBLE");
+
+    const settled = applyEvent(upd, ev("all", "settled", 0, "2 new documents read, 2 parsed"));
+    expect(settled).toMatchObject({ background: null, summary: "7 tenders found. 2 new documents read, 2 parsed." });
+    expect([...base, ev("all", "done", 0, "x", { pending: 0 })].reduce(applyEvent, initialSweep()).background).toBeNull();
+  });
+});

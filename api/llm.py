@@ -24,6 +24,8 @@ GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 LLM_MAX_DOC_CHARS = int(os.getenv("LLM_MAX_DOC_CHARS", "14000"))
 # Parallel extractions a sweep may run: the free tier only fits about one document a minute.
 LLM_CONCURRENCY = int(os.getenv("LLM_CONCURRENCY", "1"))
+# SDK retries on 429/5xx/connection errors with backoff (honouring retry-after) before we give up.
+LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "5"))
 
 T = TypeVar("T", bound=BaseModel)
 _client: openai.AsyncOpenAI | None = None
@@ -38,7 +40,7 @@ def _llm() -> openai.AsyncOpenAI:
     if _client is None:
         # A 429 here usually means "wait for the next minute"; the SDK honours retry-after.
         _client = openai.AsyncOpenAI(api_key=os.getenv("GROQ_API_KEY") or "missing", base_url=GROQ_BASE_URL,
-                                     timeout=120.0, max_retries=5)
+                                     timeout=120.0, max_retries=LLM_MAX_RETRIES)
     return _client
 
 

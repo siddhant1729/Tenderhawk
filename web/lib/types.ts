@@ -2,7 +2,8 @@
 
 export type Verdict = "ELIGIBLE" | "CHECK_DOCS" | "NOT_ELIGIBLE";
 export type AgentName = "gem" | "cppp" | "haryana" | "corrigenda" | "all";
-export type EventType = "started" | "step" | "result" | "error" | "done";
+// update: a late document parse changed a match. settled: background document reading finished.
+export type EventType = "started" | "step" | "result" | "error" | "done" | "update" | "settled";
 
 export interface Profile {
   id: number;
@@ -28,6 +29,8 @@ export interface StepEvent {
   message: string;
   count: number | null;
   direct_url: string | null;
+  pending?: number | null;     // on all/done: documents still being read in the background
+  tender_id?: number | null;   // on all/update
   ts: string;
 }
 

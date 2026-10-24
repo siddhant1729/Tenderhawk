@@ -47,8 +47,11 @@ def publish(ev: StepEvent) -> None:
 
 
 def _is_final(js: str) -> bool:
+    """all/done ends the stream unless documents are still being read; then all/settled does."""
     d = json.loads(js)
-    return d.get("agent") == "all" and d.get("type") == "done"
+    if d.get("agent") != "all":
+        return False
+    return d.get("type") == "settled" or (d.get("type") == "done" and not d.get("pending"))
 
 
 async def stream(sweep_id: str) -> AsyncIterator[str]:

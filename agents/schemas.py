@@ -97,11 +97,14 @@ class Corrigendum(BaseModel):
 class StepEvent(BaseModel):
     sweep_id: str
     agent: AgentName
-    type: Literal["started", "step", "result", "error", "done"]
+    # update: a late document parse changed a match (tender_id). settled: background reading finished.
+    type: Literal["started", "step", "result", "error", "done", "update", "settled"]
     step: int = 0
     message: str = ""
     count: int | None = None
     direct_url: str | None = None
+    pending: int | None = None      # on all/done: documents still being read in the background
+    tender_id: int | None = None    # on all/update
     ts: datetime = Field(default_factory=lambda: datetime.now(IST))
 
 

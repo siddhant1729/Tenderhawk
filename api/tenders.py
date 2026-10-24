@@ -60,3 +60,33 @@ def save_eligibility(tender_id: int, eligibility: dict, source: str | None = Non
         t.eligibility = eligibility
         t.eligibility_source = source
         db.commit()
+
+
+def known_documents(urls: list[str]) -> dict[str, dict]:
+    """Text and parse already stored for these doc_urls (any tender), so a document is read and parsed once."""
+    if not urls:
+        return {}
+    with SessionLocal() as db:
+        q = select(Tender.doc_url, Tender.doc_text, Tender.doc_source, Tender.eligibility, Tender.eligibility_source
+                   ).where(Tender.doc_url.in_(urls), Tender.doc_text.is_not(None))
+        out: dict[str, dict] = {}
+        for r in db.execute(q):
+            prev = out.get(r.doc_url)
+            if prev is None or (prev["eligibility"] is None and r.eligibility is not None):
+                out[r.doc_url] = {"text": r.doc_text, "doc_source": r.doc_source,
+                                  "eligibility": r.eligibility, "eligibility_source": r.eligibility_source}
+        return out
+
+
+def tenders_needing_documents(ids: list[int]) -> list[tuple[int, str, bool]]:
+    """(id, doc_url, has_text) for tenders still missing their document text or its parse."""
+    with SessionLocal() as db:
+        q = select(Tender.id, Tender.doc_url, Tender.doc_text.is_not(None).label("has_text")).where(
+            Tender.id.in_(ids), Tender.doc_url.is_not(None),
+            (Tender.doc_text.is_(None)) | (Tender.eligibility.is_(None)))
+        return [(r.id, r.doc_url, r.has_text) for r in db.execute(q)]
+
+
+def bid_numbers(ids: list[int]) -> dict[int, str]:
+    with SessionLocal() as db:
+        return dict(db.execute(select(Tender.id, Tender.bid_no).where(Tender.id.in_(ids))).all())

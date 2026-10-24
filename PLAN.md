@@ -95,6 +95,7 @@ async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Se
 `count` is set on `result` (bids found). `direct_url` is set on `error`. After all agents finish, one final event with `agent: "all"` and `type: "done"`.
 - Each portal card gets exactly one `started`, then `step`s, then one `result` or `error`, even though a portal is searched once per profile keyword (per-keyword messages are prefixed `[keyword]`). A portal ends in `error` (with `direct_url`) only when it found no bids and something failed (captcha, crash, no fixture).
 - Pipeline progress after the portals finish is sent as `agent: "all"`, `type: "step"` (e.g. "Reading 10 bid documents", "Matching tenders against your profile"). The `done` message carries the summary.
+- `all/done` fires once listings, already-known documents (same `doc_url` in the DB or a fixture: text and parse reused) and corrigenda are matched; it carries `pending` = new documents still to read. Those are fetched and parsed in the background (Groq: one at a time; 429/5xx/timeouts → eligibility null → CHECK_DOCS); each parse re-matches its tender and publishes `all/update` (`tender_id`); `all/settled` ends the stream. With `pending: 0`, `all/done` ends it.
 - A client that connects late (or reconnects) gets the full event log replayed first. If a sweep goes silent for 15 min (server restarted mid-sweep), the stream ends with a `done` saying so.
 
 ### 3.4 Eligibility JSON (stored in `tenders.eligibility`)
@@ -286,6 +287,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 1 (C1): GeM doc text via Fetch → direct PDF download in `agents/` (verified live, `source=direct`); agent route tried once and can't read PDFs; `AGENT_LIMITS` no longer sends the rejected `max_steps`; `tenders.doc_source` / `eligibility_source` + `/matches/{id}` provenance.
 - Phase 2: one clock (`api/clock.py` `now_ist()`) for matcher, corrigenda, auto-alert, fixture check; web and `/demo` countdowns sync from `/health.now`. Fallback freezes at `DEMO_NOW`, else the newest fixture's `recorded_at` (no date rewriting). Tests: closes-in-3-days stays open, deadline-passed is NOT_ELIGIBLE.
 - Phase 3: timezone audit. Storage was already tz-aware (`timestamptz`); added `as_ist()` so a naive datetime means IST, never the server's zone (matcher no longer crashes on one; alert "closes" text and corrigenda time-of-day no longer depend on `TZ`); `/demo` dates pinned to Asia/Kolkata. Tests: GeM "24-10-2026 2:00 PM IST" → 14:00 IST; a 15:00 IST deadline is open at 14:59 and passed at 15:01 with the server in UTC / Los Angeles / Kolkata.
+- Phase 4: parse cache (text + parse reused by `doc_url` from the DB, then fixtures, in live and fallback mode); `all/done` fires before new documents are read (`pending`), background reads publish `all/update` per re-matched tender and end with `all/settled`; dashboard and `/demo` keep listening and reload matches. Groq 429 retried by the SDK (`LLM_MAX_RETRIES`), persistent 429/5xx/timeouts → CHECK_DOCS, tested.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |

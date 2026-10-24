@@ -50,6 +50,7 @@ export default function AgentPanel({ state }: { state: SweepState }) {
           {state.error && <p role="alert" className="text-bad">{state.error}</p>}
           {state.pipeline && <p><b>Working:</b> {state.pipeline}…</p>}
           {state.summary && <p><b>Done.</b> {state.summary}</p>}
+          {state.background && <p role="status"><b>Still reading:</b> {state.background}…</p>}
         </div>
       )}
     </div>
