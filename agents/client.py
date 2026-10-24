@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 
 from dotenv import load_dotenv
 from pydantic import ValidationError
-from tinyfish import AsyncTinyFish, CompleteEvent, ProgressEvent, ProxyConfig, StartedEvent
+from tinyfish import AgentConfig, AsyncTinyFish, CompleteEvent, ProgressEvent, ProxyConfig, StartedEvent
 
 from agents.goals import PORTALS, goal_for
 from agents.schemas import AGENT_OUTPUT_SCHEMA, BidListing, Corrigendum, StepEvent
@@ -25,6 +25,9 @@ Emit = Callable[[StepEvent], None]
 
 # Indian govt portals drop connections from non-Indian IPs (GeM: ERR_EMPTY_RESPONSE without this).
 INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
+
+# Hard caps so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
+AGENT_LIMITS = AgentConfig(max_steps=30, max_duration_seconds=300)
 
 _client: AsyncTinyFish | None = None
 
@@ -75,7 +78,8 @@ async def run_agent(portal: str, category: str, on_step: Callable[[int, str], No
         steps: list[dict] = []
         run_id, result = None, None
         async with _tf().agent.stream(
-            url=url, goal=goal, output_schema=AGENT_OUTPUT_SCHEMA, proxy_config=INDIA_PROXY
+            url=url, goal=goal, output_schema=AGENT_OUTPUT_SCHEMA, proxy_config=INDIA_PROXY,
+            agent_config=AGENT_LIMITS,
         ) as stream:
             async for ev in stream:
                 if isinstance(ev, StartedEvent):
