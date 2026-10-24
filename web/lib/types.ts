@@ -93,6 +93,8 @@ export interface Health {
   redis: boolean;
   fallback_mode: boolean;
   next_corrigenda_check: string | null;
+  now: string;                                   // the API's clock (frozen demo clock in fallback mode)
+  clock: "real" | "DEMO_NOW" | "fixture recorded_at";
 }
 
 export interface AlertResult {

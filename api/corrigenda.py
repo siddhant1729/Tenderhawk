@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from agents.client import search_corrigenda
 from agents.schemas import IST, BidListing, Corrigendum, StepEvent, parse_portal_date
+from api.clock import now_ist
 from api.db import SessionLocal
 from api.models import Tender
 
@@ -48,7 +49,7 @@ def extension_date(c: Corrigendum, current_end: datetime) -> datetime | None:
 
 def _open_tenders(tender_ids: list[int] | None) -> list[tuple[int, BidListing, list]]:
     with SessionLocal() as db:
-        q = select(Tender).where(Tender.end_date >= datetime.now(IST))
+        q = select(Tender).where(Tender.end_date >= now_ist())
         if tender_ids is not None:
             q = q.where(Tender.id.in_(tender_ids))
         out = []

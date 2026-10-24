@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
+from api.clock import demo_now, now_ist
 from api.config import REDIS_URL, fallback_mode
 from api import events, scheduler
 from delivery.alerts import alert_match
@@ -37,8 +38,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 @app.get("/health")
 def health():
+    _, clock = demo_now()
     status = {"db": False, "redis": False, "fallback_mode": fallback_mode(),
-              "next_corrigenda_check": scheduler.next_run()}
+              "next_corrigenda_check": scheduler.next_run(),
+              "now": now_ist().isoformat(), "clock": clock}  # clock: real | DEMO_NOW | fixture recorded_at
     try:
         with engine.connect() as c:
             c.execute(text("SELECT 1"))

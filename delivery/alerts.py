@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 import api.config  # noqa: F401  (loads .env)
 from agents.schemas import IST
+from api.clock import now_ist
 from api.db import SessionLocal
 from api.matcher import ELIGIBLE, inr
 from api.models import Match
@@ -189,7 +190,7 @@ def _pending_eligible(profile_id: int) -> list[int]:
     with SessionLocal() as db:
         q = (select(Match).where(Match.profile_id == profile_id, Match.verdict == ELIGIBLE,
                                  Match.relevant.is_(True), Match.alerted_at.is_(None)))
-        now = datetime.now(IST)
+        now = now_ist()
         ms = [m for m in db.scalars(q) if m.tender.end_date > now]
         ms.sort(key=lambda m: -(m.fit_score or 0))
         return [m.id for m in ms[:AUTO_ALERT_MAX]]

@@ -1,3 +1,4 @@
+import { syncFromServer } from "./clock";
 import type { AlertResult, Health, MatchDetail, MatchSummary, Profile, ProfileInput } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
@@ -32,14 +33,27 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function health(): Promise<Health> {
+  const h = await call<Health>("/health");
+  syncFromServer(h.now);
+  return h;
+}
+
+/** Deadlines are shown against the API's clock, so sync it once before the first match data renders. */
+let clockSynced: Promise<unknown> | null = null;
+function withClock<T>(load: () => Promise<T>): Promise<T> {
+  clockSynced ??= health().catch(() => { clockSynced = null; });
+  return clockSynced.then(load);
+}
+
 export const api = {
-  health: () => call<Health>("/health"),
+  health,
   createProfile: (p: ProfileInput) => call<{ id: number }>("/profiles", { method: "POST", body: JSON.stringify(p) }),
   profile: (id: number) => call<Profile>(`/profiles/${id}`),
   startSweep: (profileId: number) =>
     call<{ sweep_id: string }>("/sweeps", { method: "POST", body: JSON.stringify({ profile_id: profileId }) }),
-  matches: (profileId: number) => call<MatchSummary[]>(`/profiles/${profileId}/matches`),
-  match: (id: number) => call<MatchDetail>(`/matches/${id}`),
+  matches: (profileId: number) => withClock(() => call<MatchSummary[]>(`/profiles/${profileId}/matches`)),
+  match: (id: number) => withClock(() => call<MatchDetail>(`/matches/${id}`)),
   alert: (id: number) => call<AlertResult>(`/matches/${id}/alert`, { method: "POST" }),
   rematch: (profileId: number) => call<{ counts: Record<string, number> }>(`/profiles/${profileId}/match`, { method: "POST" }),
 };

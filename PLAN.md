@@ -14,7 +14,7 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 3. Open a match to see the verdict, its reasons and the **highlighted source clause**.
 4. A WhatsApp alert lands on a phone on stage.
 
-**Must work offline:** `FALLBACK_MODE=true` replays recorded runs with the same UI and SSE events.
+**Must work offline:** `FALLBACK_MODE=true` replays recorded runs with the same UI and SSE events, on a frozen demo clock (`DEMO_NOW`, else the newest fixture's `recorded_at`; `api/clock.py`) so recorded deadlines never expire.
 
 ---
 
@@ -161,6 +161,7 @@ Hard rules first, then rank by cosine similarity (profile embedding vs tender em
 ```
 TINYFISH_API_KEY=
 FALLBACK_MODE=false
+DEMO_NOW=                    # fallback only: frozen "now" (ISO, IST if no offset); empty = newest fixture's recorded_at
 DATABASE_URL=postgresql+psycopg://tenderhawk:tenderhawk@localhost:5432/tenderhawk
 REDIS_URL=redis://localhost:6379/0
 GROQ_API_KEY=                # Groq free tier: the eligibility parser
@@ -283,6 +284,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Branches checked (all merged, `main` = `origin/main`); Groq free tier replaced Claude as the only LLM (Anthropic removed); parser verified on 2 real GeM bid PDFs: every criterion found, every clause verbatim in the document, ~7 s each, MSE EMD exemption caught.
 - Phase 0 (`fix/demo-hardening`): web `npm install` + `npm test` (14 ✅) + `npm run build` ✅; one alembic head. Docker not running (Docker Desktop's `docker-desktop` WSL distro stopped), so DB steps and the 2 Postgres alert tests wait for it.
 - Phase 1 (C1): GeM doc text via Fetch → direct PDF download in `agents/` (verified live, `source=direct`); agent route tried once and can't read PDFs; `AGENT_LIMITS` no longer sends the rejected `max_steps`; `tenders.doc_source` / `eligibility_source` + `/matches/{id}` provenance.
+- Phase 2: one clock (`api/clock.py` `now_ist()`) for matcher, corrigenda, auto-alert, fixture check; web and `/demo` countdowns sync from `/health.now`. Fallback freezes at `DEMO_NOW`, else the newest fixture's `recorded_at` (no date rewriting). Tests: closes-in-3-days stays open, deadline-passed is NOT_ELIGIBLE.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |

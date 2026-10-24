@@ -14,6 +14,7 @@ A document matches a bid when its file name (without extension) is the last part
 import argparse
 import asyncio
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -23,6 +24,7 @@ from pydantic import ValidationError
 
 from agents.client import fixture_path
 from agents.schemas import IST, BidListing
+from api.clock import parse_demo_now
 from api.documents import to_text
 from api.eligibility import Eligibility, parse_eligibility
 from api.llm import LLMError
@@ -74,9 +76,15 @@ async def attach(fx: dict, folder: Path, parse: bool, log=print) -> dict:
     return fx
 
 
+def demo_clock(fx: dict) -> datetime:
+    """The "now" a fallback demo of this fixture runs at (api/clock.py): DEMO_NOW, else its recorded_at."""
+    raw = os.getenv("DEMO_NOW", "").strip() or fx.get("recorded_at")
+    return parse_demo_now(raw) if raw else datetime.now(IST)
+
+
 def check(fx: dict, now: datetime | None = None) -> list[str]:
     """Problems that would hurt a fallback demo. Empty list = good to go."""
-    now = now or datetime.now(IST)
+    now = now or demo_clock(fx)
     problems = []
     bids = []
     for raw in fx.get("result", []):
@@ -131,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(attach(fx, args.docs, args.parse))
         path.write_text(json.dumps(fx, indent=2, ensure_ascii=False))
         print(f"saved {path}")
+    print(f"  demo clock: {demo_clock(fx).isoformat()} ({'DEMO_NOW' if os.getenv('DEMO_NOW') else 'recorded_at'})")
     problems = check(fx)
     for p in problems:
         print(f"  ⚠ {p}")

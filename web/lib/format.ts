@@ -1,3 +1,4 @@
+import { now as serverNow } from "./clock";
 import type { Excerpt, Verdict } from "./types";
 
 /** 4000000 -> "₹40 L", 12000000 -> "₹1.2 Cr", 37000 -> "₹37,000" (same rules as api/matcher.inr). */
@@ -10,7 +11,7 @@ export function inr(v: number | null | undefined): string {
 }
 
 /** "closes in 3 days", "closes in 5 h", "closed 2 days ago". */
-export function deadline(endIso: string, now: Date = new Date()): { text: string; closed: boolean; urgent: boolean } {
+export function deadline(endIso: string, now: Date = serverNow()): { text: string; closed: boolean; urgent: boolean } {
   const ms = new Date(endIso).getTime() - now.getTime();
   const abs = Math.abs(ms);
   const h = Math.round(abs / 36e5);

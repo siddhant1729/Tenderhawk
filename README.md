@@ -200,6 +200,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 |---|---|
 | `TINYFISH_API_KEY` | TinyFish Agent / Fetch / Search |
 | `FALLBACK_MODE` | `true` replays `delivery/fixtures/*.json` instead of live runs |
+| `DEMO_NOW` | Fallback only: the frozen "now" for deadlines (ISO, IST if no offset). Empty = the newest fixture's `recorded_at`, so recorded bids never expire |
 | `GROQ_API_KEY`, `LLM_MODEL`, `LLM_MODEL_FAST` | Eligibility parser on Groq's free tier (`openai/gpt-oss-120b`, strict JSON schema) and light tasks (`openai/gpt-oss-20b`) |
 | `OPENAI_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Optional `text-embedding-3-small`, 1536 dims; without a key, ranking uses keyword overlap |
 | `LLM_EFFORT`, `LLM_MAX_DOC_CHARS`, `LLM_CONCURRENCY` | Parser reasoning effort; characters sent per document and documents parsed at once (free tier: 8k tokens/min) |

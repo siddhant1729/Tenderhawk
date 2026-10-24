@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from agents.schemas import IST
+from api.clock import now_ist
 
 ELIGIBLE, CHECK_DOCS, NOT_ELIGIBLE = "ELIGIBLE", "CHECK_DOCS", "NOT_ELIGIBLE"
 VERDICT_RANK = {ELIGIBLE: 0, CHECK_DOCS: 1, NOT_ELIGIBLE: 2}
@@ -65,7 +66,7 @@ def _crit(el: dict, key: str) -> tuple:
 
 def evaluate(p: ProfileFacts, end_date: datetime, eligibility: dict | None, now: datetime | None = None,
              corrigenda: list[dict] | None = None) -> Result:
-    now = now or datetime.now(IST)
+    now = now or now_ist()
     reasons: list[dict] = []
     docs: list[str] = []
 

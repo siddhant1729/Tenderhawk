@@ -133,8 +133,9 @@ function inr(v) {
   if (v >= 1e5) return "₹" + +(v / 1e5).toFixed(2) + " L";
   return "₹" + Math.round(v).toLocaleString("en-IN");
 }
+let clockOffset = 0;  // API clock (frozen demo clock in fallback mode) minus browser clock, from /health
 function deadline(iso) {
-  const end = new Date(iso), ms = end - Date.now();
+  const end = new Date(iso), ms = end - (Date.now() + clockOffset);
   const date = end.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   if (ms <= 0) return "closed " + date;
   const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4);
@@ -150,6 +151,8 @@ async function getJSON(path, opts) {
 async function loadHealth() {
   try {
     const h = await getJSON("/health");
+    const t = new Date(h.now).getTime();
+    clockOffset = Number.isNaN(t) ? 0 : t - Date.now();
     document.getElementById("mode").textContent =
       (h.fallback_mode ? "Fallback mode (recorded runs)" : "Live mode") + " · DB " + (h.db ? "✓" : "✕") + " · Redis " + (h.redis ? "✓" : "✕");
   } catch (e) { document.getElementById("mode").textContent = "API unreachable"; }
@@ -332,9 +335,8 @@ async function openMatch(id) {
 /* ---------- boot ---------- */
 document.getElementById("sweep").addEventListener("click", startSweep);
 resetAgents();
-loadHealth();
+loadHealth().then(loadMatches);  // countdowns need the API clock first
 loadProfile();
-loadMatches();
 setInterval(() => { if (!es) loadMatches(); }, 60000);  // keep deadline countdowns fresh
 </script>
 </body>
