@@ -267,11 +267,28 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | Agent returns malformed JSON | `output_schema` plus one retry, then skip |
 | Running out of time | Cut order: email → corrigenda job → Haryana portal. **Never cut:** fallback mode, the clause highlight, WhatsApp |
 
-## 9. Progress (updated 2026-10-25)
+## 9. Progress (updated 2026-10-24)
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
+**In short:** all code paths are built and merged to `main` (every `feat/*` branch is merged; nothing is left unmerged on a branch). What's left is mostly **keys, real fixtures and rehearsal**, not code.
+
 All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` runs the API (:8000) and dashboard (:3000) too.
+
+### What's left (in priority order)
+| # | Task | Owner | Blocked on |
+|---|---|---|---|
+| 1 | Get `ANTHROPIC_API_KEY` into `.env` (only `TINYFISH_API_KEY` is set) | Siddhant | key |
+| 2 | Record real fixtures: `gem_storage_rack.json` first, then CPPP + Haryana, with doc texts and parses (`delivery.build_fixture attach`) and `check` = "fixture OK". The current `gem_steel_rack.json` is unusable (unrelated, closed bids) | Vandan + Siddhant | 1 |
+| 3 | Run CPPP + Haryana live at least once (never run live yet); confirm the 30-step / 300 s cap ends cleanly | Siddhant | — |
+| 4 | Run the eligibility parser on 5 real GeM docs, check the clauses | Harsh | 1, 2 |
+| 5 | Twilio sandbox: `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | keys, phone |
+| 6 | Optional: `OPENAI_API_KEY` for real embeddings (keyword-overlap ranking works without it); `SMTP_URL` for email (first thing to cut) | Harsh / Vandan | keys |
+| 7 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | 2 |
+| 8 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | 2, 5 |
+| 9 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | 8 |
+
+Open code issue (not blocking the demo): Fetch → GeM bid docs returns `proxy_error`, so live sweeps get no GeM doc text and those matches show CHECK_DOCS. Fixtures work around it with hand-saved PDFs.
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
@@ -292,7 +309,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan (built by Harsh) | 🟡 | `delivery/alerts.py`: Twilio REST + SMTP, endpoint, auto-alert after sweeps; tested with stubs. Needs `TWILIO_*` + stage phone joined to the sandbox to send for real |
 | H16–21 | Match detail page with highlighted clause | Aditya (built by Harsh) | ✅ | clause highlighted in the bid text, checklist, corrigenda, alert button with message preview |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | ✅ | "Open on portal" cards, API-down / DB-down banners, reconnect notice, 404 pages |
-| H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | README current. Dry runs and the tag wait for real fixtures and the Twilio sandbox (needs keys) |
+| H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | README current. No tag yet. Dry runs and the tag wait for real fixtures and the Twilio sandbox (needs keys) |
 
 Not built, by choice: OCR for scanned bid PDFs (CLAUDE.md stack). Every GeM bid PDF tested so far has a text layer; `build_fixture attach` reports a document with no text instead of guessing.
 
@@ -304,7 +321,7 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 61 tests, no keys needed
+python -m pytest -q tests         # 61 tests, no keys needed (2 alert tests need Postgres running)
 cd web && npm test                # 14 tests
 ```
 
