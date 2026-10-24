@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("portal")
     a.add_argument("category")
     a.add_argument("--docs", required=True, type=Path, help="folder of saved bid PDFs / .txt files")
-    a.add_argument("--parse", action="store_true", help="also run the eligibility parser (needs GROQ_API_KEY or ANTHROPIC_API_KEY)")
+    a.add_argument("--parse", action="store_true", help="also run the eligibility parser (needs GROQ_API_KEY)")
     c = sub.add_parser("check", help="validate a fixture for the fallback demo")
     c.add_argument("portal")
     c.add_argument("category")

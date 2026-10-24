@@ -70,9 +70,7 @@ Rules:
 
 async def parse_eligibility(doc_text: str) -> dict:
     """Returns the §3.4 dict. Raises llm.LLMError when the model can't produce a valid result."""
-    limit = llm.max_doc_chars()
-    if limit and len(doc_text) > limit:
-        doc_text = doc_text[:limit]
+    doc_text = doc_text[:llm.LLM_MAX_DOC_CHARS]
     el = await llm.extract(SYSTEM, f"<bid_document>\n{doc_text}\n</bid_document>", Eligibility)
     return el.model_dump()
 

@@ -123,7 +123,7 @@ async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
     publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
                       message=f"Reading eligibility criteria from {len(todo)} documents"))
     recorded = await asyncio.to_thread(_fixture_eligibility) if fallback_mode() else {}
-    sem = asyncio.Semaphore(llm.concurrency())
+    sem = asyncio.Semaphore(llm.LLM_CONCURRENCY)
 
     async def one(tid: int, doc_url: str | None, text: str) -> bool:
         try:
