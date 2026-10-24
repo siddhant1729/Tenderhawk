@@ -105,7 +105,7 @@ def get_match(match_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "match not found")
     t = m.tender
     reasons = [{**r, "excerpt": excerpt(t.doc_text or "", r.get("source_clause") or "")} for r in m.reasons]
-    return MatchDetail(id=m.id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
+    return MatchDetail(id=m.id, profile_id=m.profile_id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
                        missing_docs=m.missing_docs, alerted_at=m.alerted_at, tender=t,
                        eligibility=t.eligibility, corrigenda=t.corrigenda or [])
 
