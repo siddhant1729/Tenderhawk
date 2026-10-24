@@ -23,7 +23,8 @@ async def record(portal: str, category: str) -> None:
     run = await run_agent(portal, category, lambda n, m: print(f"[{portal}:step:{n}] {m}", flush=True))
     bids = to_listings(portal, run["result"].get("bids", []))
     if not bids:
-        print(f"not saved: 0 bids (blocked={run['result'].get('blocked')}: {run['result'].get('blocked_reason')})")
+        r = run["result"]
+        print(f"not saved: 0 bids" + (f" (blocked: {r.get('blocked_reason')})" if r.get("blocked") else " (no relevant bids)"))
         return
     docs = {}
     for b in bids:
