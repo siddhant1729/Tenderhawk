@@ -178,7 +178,7 @@ ALERT_WHATSAPP_TO=
 SMTP_URL=                    # smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465
 ALERT_EMAIL_FROM=            # defaults to the SMTP user
 ALERT_EMAIL_TO=              # overrides the profile's email (demo inbox)
-AUTO_ALERT=true              # after each sweep, alert new relevant ELIGIBLE matches (max 5 per sweep)
+AUTO_ALERT=true              # after each sweep, alert relevant open ELIGIBLE matches not alerted yet (max 3 per sweep, 20 s budget)
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 **Never commit `.env`.** Share secrets over DM, not in the repo or in chat logs.
@@ -271,7 +271,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-`agents/` and `api/` are merged to `main` (42 tests pass on the combined code). All §3.5 endpoints exist.
+All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` runs the API (:8000) and dashboard (:3000) too.
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
@@ -279,20 +279,20 @@ Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 | H0–4 | First live GeM fixture | Siddhant | 🟡 | `gem_steel_rack.json` exists, but its 10 bids are unrelated (matched "Ministry of Steel") and closed on 24 Oct, with no docs/parses. Re-record once the keyword is settled (§7). |
 | H0–4 | FastAPI, models, Alembic, `/health`, `/profiles` | Harsh | ✅ | |
 | H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | `python -m delivery.seed` |
-| H0–4 | Next.js scaffold + profile form | Aditya | ⬜ | |
+| H0–4 | Next.js scaffold + profile form | Aditya (built by Harsh) | ✅ | `web/`, Next.js 16 + Tailwind 4; Ramesh demo fill button |
 | H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
 | H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs returns `proxy_error`**, so no doc text yet (§1). CPPP + Haryana not run live. Runs capped at 30 steps / 300 s (untested in a run). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
-| H4–10 | Live agents panel (SSE) | Aditya | ⬜ | |
+| H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | built and tested against a stub API; needs `ANTHROPIC_API_KEY` for the "5 real GeM docs" check |
 | H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking until `OPENAI_API_KEY` is set; clause excerpts for highlighting |
 | H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
-| H10–16 | Matches list UI | Aditya | ⬜ | |
-| H10–16 | Fixtures GeM/CPPP/Haryana × "steel racks" + doc texts + parses | Vandan | ⬜ | blocks the wifi-off demo |
+| H10–16 | Matches list UI | Aditya (built by Harsh) | ✅ | verdict chips with text labels, value, deadline countdown, fit; low-relevance folded |
+| H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | 🟡 | Tooling done: `python -m delivery.build_fixture attach/check`. Recording needs `TINYFISH_API_KEY` (live runs) and `ANTHROPIC_API_KEY` (parses) |
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan (built by Harsh) | 🟡 | `delivery/alerts.py`: Twilio REST + SMTP, endpoint, auto-alert after sweeps; tested with stubs. Needs `TWILIO_*` + stage phone joined to the sandbox to send for real |
-| H16–21 | Match detail page with highlighted clause | Aditya | ⬜ | API ready: `GET /matches/{id}` returns `reasons[].excerpt` with highlight offsets |
-| H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | 🟡 | backend side done; UI side pending |
-| H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | `README.md` drafted; update its status list (backend now done) at freeze. Dry runs and tag pending |
+| H16–21 | Match detail page with highlighted clause | Aditya (built by Harsh) | ✅ | clause highlighted in the bid text, checklist, corrigenda, alert button with message preview |
+| H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | ✅ | "Open on portal" cards, API-down / DB-down banners, reconnect notice, 404 pages |
+| H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | README current. Dry runs and the tag wait for real fixtures and the Twilio sandbox (needs keys) |
 
 **Backend run steps (current):**
 ```
@@ -302,5 +302,14 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 52 tests, no keys needed
+python -m pytest -q tests         # 61 tests, no keys needed
+cd web && npm test                # 14 tests
 ```
+
+**Before every demo run (checklist):**
+1. `docker compose up -d` (or the app profile), `alembic upgrade head`, `python -m delivery.seed`.
+2. `python -m delivery.build_fixture check gem "storage rack"` (and cppp, haryana) prints "fixture OK" — bids still open, documents and parses recorded.
+3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone.
+4. `python -m delivery.alerts reset` so the on-stage sweep sends the alert again (rehearsals mark matches as alerted).
+5. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
+
