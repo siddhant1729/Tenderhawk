@@ -185,7 +185,9 @@ SMTP_URL=                    # smtp://user:pass@host:587 (STARTTLS) or smtps://u
 ALERT_EMAIL_FROM=            # defaults to the SMTP user
 ALERT_EMAIL_TO=              # overrides the profile's email (demo inbox)
 AUTO_ALERT=true              # after each sweep, alert relevant open ELIGIBLE matches not alerted yet (max 3 per sweep, 20 s budget)
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000   # baked into the web build
+WEB_ORIGINS=http://localhost:3000,http://127.0.0.1:3000   # CORS: origins the API allows
+WEB_URL=http://localhost:3000                # where preflight expects the dashboard
 ```
 **Never commit `.env`.** Share secrets over DM, not in the repo or in chat logs.
 
@@ -290,6 +292,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 4: parse cache (text + parse reused by `doc_url` from the DB, then fixtures, in live and fallback mode); `all/done` fires before new documents are read (`pending`), background reads publish `all/update` per re-matched tender and end with `all/settled`; dashboard and `/demo` keep listening and reload matches. Groq 429 retried by the SDK (`LLM_MAX_RETRIES`), persistent 429/5xx/timeouts → CHECK_DOCS, tested.
 - Phase 5: real fixtures. `gem_storage_rack` (live run, 28 steps, 1 bid, PDF via direct download, parsed: ELIGIBLE, no EMD/turnover criteria); `cppp_storage_rack` (3 real storage-rack bids, ₹9.3–39.5 L; CPPP only gives expiring session links, so no documents: CHECK_DOCS + stable portal link); `haryana_storage_rack` (blocked by captcha after 26 steps: replays as the captcha card with the portal link); `gem_steel_almirah` (8 bids; the agent guessed `/showbiddata/` links (404), no documents: CHECK_DOCS). Old `gem_steel_rack` retired. Verdict mix from real data: ELIGIBLE 1, CHECK_DOCS 11, **NOT_ELIGIBLE 0** (not forced). Found: TinyFish's 300 s cap is soft (runs took 352 s and 471 s), so `agents/` now stops waiting at `AGENT_TIMEOUT` (330 s) → clean error card; blocked runs are recorded and replayed; GeM goal demands the exact `showbidDocument` href and guessed links are dropped.
 - Phase 6: `python -m delivery.seed --reset` (tenders, matches + alert flags, `sweep:*` Redis keys; reseeds Ramesh) and `scripts/preflight.py` (11 checks, PASS/WARN/FAIL, exit 1 on FAIL; TinyFish wallet read via the SDK: $15.18 ≈ 948 agent steps). Today it reports NOT READY: Docker down, Twilio unset, NOT_ELIGIBLE missing from the verdict mix.
+- Phase 7: verdict chips say "You can bid" / "Keep proof ready" / "Turnover short"·"Deadline passed"·"State not served" (icon + words, never colour alone); match page provenance line (found by TinyFish on <portal> · document fetch/direct/recorded · eligibility LLM/recorded · verdict by rules); Replay-mode badge with the demo clock; `:focus-visible` ring; eligibility table scrolls and row metrics wrap at 390 px; CORS from `WEB_ORIGINS`; DB down → plain 503 sentence, never a bare 500. No Playwright in the project, so no headless run: smoke-tested with the real build (`next start` + uvicorn, DB down): pages render loading shells, API answers 503 sentences, unknown route 404, no tracebacks. Full click-through of §0 waits for Docker (HUMAN TODO).
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |

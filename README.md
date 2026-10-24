@@ -207,6 +207,9 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
 | `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
 | `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
+| `NEXT_PUBLIC_API_URL` | Where the dashboard calls the API (baked into the web build: rebuild after changing it) |
+| `WEB_ORIGINS` | Browser origins the API allows (CORS), comma-separated; default `http://localhost:3000,http://127.0.0.1:3000`. Add the laptop's LAN address if the dashboard is opened from another device |
+| `WEB_URL` | Where `scripts/preflight.py` expects the dashboard |
 | `TWILIO_*`, `ALERT_WHATSAPP_TO` | WhatsApp alerts (Twilio sandbox; `ALERT_WHATSAPP_TO` = the stage phone) |
 | `SMTP_URL`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Email alerts |
 | `AUTO_ALERT` | Alert new relevant ELIGIBLE matches after each sweep (max 3 per sweep) |

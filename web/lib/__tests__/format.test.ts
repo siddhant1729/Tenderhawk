@@ -82,3 +82,15 @@ describe("compactExcerpt", () => {
     expect(compactExcerpt(ex)).toEqual({ before: "", clause: "EMD Amount", after: " 100000" });
   });
 });
+
+describe("verdictLabel", () => {
+  it("speaks plainly and names the failing criterion", async () => {
+    const { verdictLabel } = await import("../format");
+    expect(verdictLabel("ELIGIBLE")).toBe("You can bid");
+    expect(verdictLabel("CHECK_DOCS")).toBe("Keep proof ready");
+    expect(verdictLabel("NOT_ELIGIBLE", [{ kind: "ok", criterion: "emd" }, { kind: "fail", criterion: "turnover" }])).toBe("Turnover short");
+    expect(verdictLabel("NOT_ELIGIBLE", [{ kind: "fail", criterion: "deadline" }])).toBe("Deadline passed");
+    expect(verdictLabel("NOT_ELIGIBLE", [{ kind: "fail", criterion: "states" }])).toBe("State not served");
+    expect(verdictLabel("NOT_ELIGIBLE")).toBe("Can’t bid");
+  });
+});

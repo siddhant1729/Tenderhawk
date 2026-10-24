@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { compactExcerpt, deadline, inr, istDate, safeHref } from "@/lib/format";
+import { compactExcerpt, deadline, inr, istDate, provenanceLine, safeHref } from "@/lib/format";
 import type { AlertResult, MatchDetail, Reason } from "@/lib/types";
 import ErrorBox from "./ErrorBox";
 import VerdictChip from "./VerdictChip";
@@ -117,11 +117,11 @@ export default function MatchView({ matchId }: { matchId: number }) {
 
       <section className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-5">
         <div className="flex flex-wrap items-center gap-3">
-          <VerdictChip verdict={m.verdict} large />
+          <VerdictChip verdict={m.verdict} reasons={m.reasons} large />
           <span className="rounded bg-paper-2 px-2 py-0.5 text-xs font-semibold uppercase">{t.portal}</span>
           <span className="font-mono text-sm text-ink-soft">{t.bid_no}</span>
         </div>
-        <h1 className="text-2xl font-bold">{t.title}</h1>
+        <h1 className="text-2xl font-bold break-words">{t.title}</h1>
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div><dt className="text-ink-soft">Buyer</dt><dd className="font-semibold">{t.buyer || "—"}</dd></div>
           <div><dt className="text-ink-soft">Estimated value</dt><dd className="font-semibold">{inr(t.est_value)}</dd></div>
@@ -133,6 +133,7 @@ export default function MatchView({ matchId }: { matchId: number }) {
           {source && <a href={source} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper">Open on portal ↗</a>}
           {doc && doc !== source && <a href={doc} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-ink/30 px-3 py-1.5 text-sm font-semibold">Bid document ↗</a>}
         </div>
+        {m.provenance && <p className="text-xs text-ink-soft">{provenanceLine(m.provenance)}</p>}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
@@ -176,7 +177,8 @@ export default function MatchView({ matchId }: { matchId: number }) {
       {m.eligibility && (
         <details className="rounded-2xl border border-line bg-card p-4">
           <summary className="cursor-pointer font-bold">Eligibility read from the bid document</summary>
-          <table className="mt-3 w-full text-left text-sm">
+          <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[32rem] text-left text-sm">
             <thead><tr className="text-ink-soft"><th className="py-1 pr-4">Criterion</th><th className="py-1 pr-4">Value</th><th className="py-1">Source clause</th></tr></thead>
             <tbody>
               {Object.entries(m.eligibility).map(([k, c]) => (
@@ -188,6 +190,7 @@ export default function MatchView({ matchId }: { matchId: number }) {
               ))}
             </tbody>
           </table>
+          </div>
         </details>
       )}
     </div>

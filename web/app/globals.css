@@ -26,6 +26,13 @@ body {
   color: var(--color-ink);
 }
 
+/* Keyboard users always see where they are. */
+:focus-visible {
+  outline: 3px solid var(--color-hawk);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 mark {
   background: #fde68a;
   color: inherit;

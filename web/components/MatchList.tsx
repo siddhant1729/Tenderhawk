@@ -15,7 +15,7 @@ function Row({ m }: { m: MatchSummary }) {
       <Link href={`/matches/${m.id}`}
             className="flex flex-col gap-2 rounded-xl border border-line bg-card p-4 hover:border-ink/40 md:flex-row md:items-center md:gap-4">
         <div className="flex items-center gap-2 md:w-36 md:flex-col md:items-start">
-          <VerdictChip verdict={m.verdict} />
+          <VerdictChip verdict={m.verdict} reasons={m.reasons} />
           <span className="rounded bg-paper-2 px-1.5 py-0.5 text-xs font-semibold uppercase">{t.portal}</span>
         </div>
         <div className="min-w-0 flex-1">
@@ -23,7 +23,7 @@ function Row({ m }: { m: MatchSummary }) {
           <p className="truncate text-sm text-ink-soft">{t.buyer || "Buyer not listed"}</p>
           {top.length > 0 && <p className="mt-1 truncate text-sm">{top.map((r) => r.text).join(" · ")}</p>}
         </div>
-        <div className="flex gap-4 text-sm md:w-64 md:justify-end">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm md:w-64 md:justify-end">
           <span className="font-semibold">{inr(t.est_value)}</span>
           <span className={d.closed ? "text-bad" : d.urgent ? "font-semibold text-warn" : ""}>{d.text}</span>
           {m.fit_score != null && <span className="text-ink-soft" title="Product fit">fit {Math.round(m.fit_score * 100)}%</span>}
@@ -46,8 +46,8 @@ export default function MatchList({ matches }: { matches: MatchSummary[] }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-soft">
-        {relevant.length} relevant: {counts.ELIGIBLE || 0} eligible, {counts.CHECK_DOCS || 0} check docs,{" "}
-        {counts.NOT_ELIGIBLE || 0} not eligible
+        {relevant.length} relevant: {counts.ELIGIBLE || 0} you can bid on, {counts.CHECK_DOCS || 0} need proof ready,{" "}
+        {counts.NOT_ELIGIBLE || 0} you can’t bid on
       </p>
       {relevant.length ? (
         <ul className="flex flex-col gap-2">{relevant.map((m) => <Row key={m.id} m={m} />)}</ul>

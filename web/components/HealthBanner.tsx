@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, API_URL } from "@/lib/api";
+import { istDate } from "@/lib/format";
 import type { Health } from "@/lib/types";
 
 /** Thin status strip: API unreachable / DB or Redis down / fallback (recorded) mode. */
@@ -42,9 +43,11 @@ export default function HealthBanner() {
   }
   if (health.fallback_mode) {
     return (
-      <div className="bg-info-bg text-info text-sm">
+      <div role="status" className="bg-info-bg text-info text-sm">
         <div className="mx-auto max-w-6xl px-4 py-2">
-          Fallback mode: sweeps replay recorded agent runs, with no network and no credits.
+          <b className="mr-2 rounded bg-info px-1.5 py-0.5 text-xs uppercase tracking-wide text-info-bg">Replay mode</b>
+          Sweeps replay recorded TinyFish runs (no network, no credits)
+          {health.clock && health.clock !== "real" && <> · deadlines as of {istDate(health.now)}</>}.
         </div>
       </div>
     );

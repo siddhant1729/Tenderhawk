@@ -86,9 +86,19 @@ export interface Corrigendum {
   found_at?: string;
 }
 
+/** Where each part of a verdict came from (api/main.py provenance). */
+export interface Provenance {
+  found_by: string;                                   // "TinyFish agent on GeM" / "recorded TinyFish run on GeM"
+  portal: string;
+  doc_source: "fetch" | "direct" | "fixture" | null;  // null: no document text
+  eligibility_by: string | null;                      // "LLM (openai/gpt-oss-120b)" / "recorded parse"
+  verdict_by: string;
+}
+
 export interface MatchDetail extends MatchSummary {
   eligibility: Record<string, { value: unknown; source_clause: string | null }> | null;
   corrigenda: Corrigendum[];
+  provenance?: Provenance;
 }
 
 export interface Health {

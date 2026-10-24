@@ -1,18 +1,20 @@
 """TenderHawk API. Run: uvicorn api.main:app --reload"""
 import asyncio
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import redis
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from api.clock import demo_now, now_ist
-from api.config import REDIS_URL, fallback_mode
+from api.config import REDIS_URL, WEB_ORIGINS, fallback_mode
 from api import events, scheduler
 from delivery.alerts import alert_match
 from api.db import engine, get_db
@@ -32,8 +34,17 @@ async def lifespan(app: FastAPI):
     scheduler.stop()
 
 
+log = logging.getLogger("api.main")
 app = FastAPI(title="TenderHawk", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=WEB_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.exception_handler(OperationalError)
+async def database_down(request, exc):
+    """Postgres unreachable: a plain sentence for the dashboard, never a stack trace or a bare 500."""
+    log.warning("database unavailable on %s: %s", request.url.path, str(exc).splitlines()[0])
+    return JSONResponse(status_code=503, content={
+        "detail": "The database is not reachable. Start it with `docker compose up -d`, then retry."})
 
 
 @app.get("/health")

@@ -34,6 +34,42 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   NOT_ELIGIBLE: "Not eligible",
 };
 
+const DOC_SOURCE: Record<string, string> = {
+  fetch: "read by TinyFish Fetch",
+  direct: "PDF downloaded over an Indian connection",
+  fixture: "recorded copy",
+};
+
+/** "Found by TinyFish agent on GeM · document: PDF downloaded… · eligibility: LLM (…) · verdict: rules". */
+export function provenanceLine(p: { found_by: string; doc_source: string | null; eligibility_by: string | null;
+                                    verdict_by: string }): string {
+  return [
+    `Found by ${p.found_by}`,
+    `document: ${p.doc_source ? DOC_SOURCE[p.doc_source] ?? p.doc_source : "not read"}`,
+    `eligibility: ${p.eligibility_by ?? "not read"}`,
+    `verdict: ${p.verdict_by}`,
+  ].join(" · ");
+}
+
+/** What the owner should take away, in plain words, so the verdict never relies on colour alone. */
+const PLAIN: Record<Verdict, string> = {
+  ELIGIBLE: "You can bid",
+  CHECK_DOCS: "Keep proof ready",
+  NOT_ELIGIBLE: "Can’t bid",
+};
+const FAIL_REASON: Record<string, string> = {
+  turnover: "Turnover short",
+  deadline: "Deadline passed",
+  states: "State not served",
+};
+
+/** "You can bid" / "Keep proof ready" / "Turnover short" (the first failing criterion, when there is one). */
+export function verdictLabel(verdict: Verdict, reasons: { kind: string; criterion?: string }[] = []): string {
+  if (verdict !== "NOT_ELIGIBLE") return PLAIN[verdict];
+  const fail = reasons.find((r) => r.kind === "fail");
+  return (fail?.criterion && FAIL_REASON[fail.criterion]) || PLAIN.NOT_ELIGIBLE;
+}
+
 /** Split an excerpt into [before, highlighted clause, after], clamped to the text. */
 export function splitExcerpt(ex: Excerpt): [string, string, string] {
   const a = Math.max(0, Math.min(ex.highlight_start, ex.text.length));
