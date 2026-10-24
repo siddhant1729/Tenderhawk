@@ -272,24 +272,31 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-**In short:** all code paths are built and merged to `main` (every `feat/*` branch is merged; nothing is left unmerged on a branch). What's left is mostly **keys, real fixtures and rehearsal**, not code.
+**In short:** every feature in scope is built and merged to `main` (all `feat/*` branches merged). Only **one real code gap** remains (live GeM document text, below). Everything else is setup, real fixtures and rehearsal. No paid keys are needed: Groq (free) parses, keyword overlap ranks, Twilio's free trial sends WhatsApp.
 
 All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` runs the API (:8000) and dashboard (:3000) too.
 
-### What's left (in priority order)
+**Done today (2026-10-24):** branches checked (all merged, `main` = `origin/main`); Groq free tier replaced Claude as the only LLM (Anthropic removed); parser verified on 2 real GeM bid PDFs: every criterion found, every clause verbatim in the document, ~7 s each, MSE EMD exemption caught.
+
+### Left to implement (code)
+| # | Task | Owner | Notes |
+|---|---|---|---|
+| C1 | **Live GeM document text.** TinyFish Fetch → `bidplus.gem.gov.in/showbidDocument/…` still returns `proxy_error` (re-checked 2026-10-24); Fetch has no proxy option. So in a live sweep every GeM match is CHECK_DOCS (amber) and nothing turns green. A plain download from an Indian connection works (HTTP 200, real PDF). **Decision needed:** (a) fall back to a direct download in `agents.fetch_doc_text` when Fetch fails; it breaks the "TinyFish is the only thing touching the web" invariant for GeM PDFs, but stays inside `agents/`. Or (b) keep live mode amber and show green only from fixtures. | Siddhant | ~20 lines + a test if (a) |
+| C2 | **CPPP + Haryana live runs.** Never run live; goals may need fixing after the first run (captcha → clean `error` card with portal link). Also confirm the 30-step / 300 s cap ends a run cleanly. | Siddhant | billed agent runs; keep to 1 each |
+| C3 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | after fixtures |
+| C4 | Optional, cut first: email via `SMTP_URL` (code done, needs an SMTP account, e.g. a Gmail app password) | Vandan | |
+
+Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text layer), real embeddings (no OpenAI key; keyword overlap is enough), Browser API (phase 2).
+
+### Left to do (setup, data, rehearsal)
 | # | Task | Owner | Blocked on |
 |---|---|---|---|
-| 1 | ~~LLM key~~ ✅ done: Groq free tier (`GROQ_API_KEY`) is the only LLM provider; tested on 2 real GeM bid PDFs, every criterion found with a verbatim clause, ~7 s each | Siddhant | — |
-| 2 | Record real fixtures: `gem_storage_rack.json` first, then CPPP + Haryana, with doc texts and parses (`delivery.build_fixture attach`) and `check` = "fixture OK". The current `gem_steel_rack.json` is unusable (unrelated, closed bids) | Vandan + Siddhant | 1 |
-| 3 | Run CPPP + Haryana live at least once (never run live yet); confirm the 30-step / 300 s cap ends cleanly | Siddhant | — |
-| 4 | Run the eligibility parser on 3 more real GeM docs (2 of 5 done), check the clauses | Harsh | 2 |
-| 5 | Twilio sandbox: `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | keys, phone |
-| 6 | Optional: `SMTP_URL` for email (first thing to cut). No `OPENAI_API_KEY`: ranking stays keyword overlap, which is enough for the demo | Vandan | key |
-| 7 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | 2 |
-| 8 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | 2, 5 |
-| 9 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | 8 |
-
-Open code issue (not blocking the demo): Fetch → GeM bid docs returns `proxy_error`, so live sweeps get no GeM doc text and those matches show CHECK_DOCS. Fixtures work around it with hand-saved PDFs.
+| S1 | Get the stack running on the demo laptop: Docker Desktop's WSL integration is off (`docker` not found), so Postgres/Redis aren't running and 2 alert tests fail; `web/node_modules` isn't installed (`cd web && npm install`) | Siddhant | — |
+| S2 | **Record real fixtures**: `gem_storage_rack.json` first (live run `python -m agents.cli gem "storage rack" --record`), save the bid PDFs from a browser, `delivery.build_fixture attach … --parse`, then `check` = "fixture OK". Then CPPP + Haryana. The current `gem_steel_rack.json` is unusable (unrelated, closed bids) | Vandan + Siddhant | S1 |
+| S3 | Parse 3 more real GeM docs (2 of 5 done) and check the clauses | Harsh | S2 |
+| S4 | Twilio sandbox (free trial): `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | account, phone |
+| S5 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | S2, S4 |
+| S6 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | S5 |
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
@@ -299,7 +306,7 @@ Open code issue (not blocking the demo): Fetch → GeM bid docs returns `proxy_e
 | H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | `python -m delivery.seed` |
 | H0–4 | Next.js scaffold + profile form | Aditya (built by Harsh) | ✅ | `web/`, Next.js 16 + Tailwind 4; Ramesh demo fill button |
 | H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
-| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs returns `proxy_error`**, so no doc text yet (§1). CPPP + Haryana not run live. Runs capped at 30 steps / 300 s (untested in a run). |
+| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs still returns `proxy_error`** (re-checked 2026-10-24), so no live doc text: see C1. CPPP + Haryana not run live (C2). Runs capped at 30 steps / 300 s (untested in a run). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Groq free tier (Claude removed). 2 of 5 real GeM docs parsed on Groq with verbatim clauses (storage rack bid GEM/2026/B/7509529, IIM Indore GEM/2025/B/6356290) |
