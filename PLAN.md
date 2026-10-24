@@ -31,7 +31,7 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 | `output_schema` rejects `description` keys (HTTP 400) | Field hints live in the goal text (`agents/goals.py`) |
 | GeM's search for "steel rack" returns no rack bids; buyers write "storage rack" / "Metal Shelving Racks" | Keyword choice decides whether a live sweep finds anything (see §7); goals match on items/title, never on buyer names |
 | Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option). A TinyFish agent can't read them either (run `b4065139`, 2026-10-24: 20 steps, 110 s, no text; the browser downloads the PDF) | `agents.fetch_doc_text` falls back to a direct PDF download over the Indian connection (`source=direct`) |
-| Custom `max_steps` is rejected: HTTP 403 "Your account is not enabled for custom max steps yet" | `AGENT_LIMITS` caps time only (300 s); passing `max_steps` would fail every live run |
+| Custom `max_steps` is rejected: HTTP 403 "Your account is not enabled for custom max steps yet". `max_duration_seconds=300` is accepted but soft (runs took 352 s and 471 s) | `AGENT_LIMITS` caps time only; `agents/` also stops waiting at `AGENT_TIMEOUT` (330 s) → error card with the portal link |
 | One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 300 s (`AGENT_LIMITS`); keep goals cheap |
 
 ---
@@ -126,12 +126,12 @@ The two `*_relaxation_*` flags come straight from GeM bid documents: when MSE re
 | `GET` | `/profiles/{id}/matches` | list: tender summary + verdict + fit_score, sorted |
 | `GET` | `/matches/{id}` | tender, eligibility (§3.4), verdict, reasons, missing_docs, corrigenda |
 | `POST` | `/matches/{id}/alert` | sends WhatsApp/email now (demo button) → `{sent, channels: {whatsapp, email}, preview}`; a channel without credentials reports `not_configured` |
-| `GET` | `/health` | `{db, redis, fallback_mode, next_corrigenda_check}` |
+| `GET` | `/health` | `{db, redis, fallback_mode, next_corrigenda_check, now, clock}` (`now`: the demo clock the UI counts down from) |
 | `POST` | `/profiles/{id}/match` | re-run the matcher on stored tenders without sweeping → verdict counts |
 | `POST` | `/corrigenda/check` | run the daily corrigenda job now (Search API, no credits) → `{checked, new, extended}` |
 
 ### 3.6 Matcher verdict rules (`api/matcher.py`)
-Hard rules first, then rank by cosine similarity (profile embedding vs tender embedding).
+Hard rules first, then rank by product fit: keyword overlap between the profile's keywords/products and the tender title/item (no embedding key).
 - **NOT_ELIGIBLE** if any of these hold:
   - turnover is below `min_turnover`
   - the tender is limited to states the profile doesn't serve
@@ -174,9 +174,6 @@ LLM_CONCURRENCY=1            # documents parsed in parallel per sweep (free tier
 LIVE_MAX_KEYWORDS=1          # profile keywords per live sweep; each one is a billed Agent run per portal
 SCHEDULER_ENABLED=true       # daily corrigenda job inside the API process (APScheduler)
 CORRIGENDA_HOUR=7            # IST hour for the daily corrigenda job
-OPENAI_API_KEY=               # optional: without it, ranking uses keyword overlap
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIM=1536
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
@@ -196,9 +193,9 @@ WEB_URL=http://localhost:3000                # where preflight expects the dashb
 |---|---|---|
 | Eligibility parser | Groq free tier `openai/gpt-oss-120b` (`LLM_MODEL`) | Strict JSON-schema output generated from the Pydantic `Eligibility` model (§3.4); every criterion carries `source_clause`. A sweep parses one document at a time (8k tokens/min) and sends the first `LLM_MAX_DOC_CHARS` characters |
 | Light tasks (title normalising, alert copy) | `openai/gpt-oss-20b` (`LLM_MODEL_FAST`) | |
-| Embeddings | `text-embedding-3-small` (`EMBEDDING_MODEL`, `EMBEDDING_DIM=1536`) | Tender = `title + item + buyer`; profile = `products + HSN descriptions`; cosine via pgvector |
+| Product fit | keyword overlap (`api/matcher.keyword_fit`) | Profile keywords + products vs tender title + item; no model, no key. `api/embeddings.py` stays off without `OPENAI_API_KEY` |
 
-- Model names live **only in env**. All LLM calls go through `api/llm.py`, all embedding calls through `api/embeddings.py`, so swapping a provider touches one file.
+- Model names live **only in env**. All LLM calls go through `api/llm.py`, so swapping a provider touches one file.
 
 ---
 
@@ -227,7 +224,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | Who | Task | Done when |
 |---|---|---|
 | Harsh | LLM eligibility parser → §3.4 JSON (structured output, Pydantic-validated); PyMuPDF for PDFs | 5 real GeM docs parse with clauses |
-| Harsh | Matcher (§3.6) + pgvector embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Ramesh gets ≥1 of each verdict colour |
+| Harsh | Matcher (§3.6) + ranking + `/profiles/{id}/matches`, `/matches/{id}` | Ramesh gets ≥1 of each verdict colour |
 | Siddhant | `search_corrigenda` + daily job (APScheduler); corrigenda agent card in SSE | A corrigendum shows on a match |
 | Aditya | Matches list (verdict chips green/amber/red, value, deadline countdown) | Renders real API data |
 | Vandan | Record fixtures: GeM, CPPP, Haryana × "storage rack" + doc texts + parses | Full demo runs with wifi off |
@@ -261,7 +258,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 ## 7. Open decisions (resolve in the first hour)
 - [x] **LLM provider/model** → Groq free tier: `openai/gpt-oss-120b` (eligibility parser), `openai/gpt-oss-20b` (light tasks). We have no Anthropic or OpenAI key (and no budget), so Claude was removed and ranking uses keyword overlap. See §4.1.
-- [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
+- [x] **Ranking** → keyword overlap (no OpenAI key, no budget). See §4.1.
 - [x] **Demo category keyword(s)** for Ramesh → "storage rack", "steel rack", "steel almirah" (in `delivery/seed/ramesh.json`). "storage rack" comes first because a live GeM run for "steel rack" found no rack bids (§1). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three, so record `gem_storage_rack.json` first.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
 - [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379`. Docker host ports can be moved with `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `REDIS_PORT`.
@@ -293,6 +290,8 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 5: real fixtures. `gem_storage_rack` (live run, 28 steps, 1 bid, PDF via direct download, parsed: ELIGIBLE, no EMD/turnover criteria); `cppp_storage_rack` (3 real storage-rack bids, ₹9.3–39.5 L; CPPP only gives expiring session links, so no documents: CHECK_DOCS + stable portal link); `haryana_storage_rack` (blocked by captcha after 26 steps: replays as the captcha card with the portal link); `gem_steel_almirah` (8 bids; the agent guessed `/showbiddata/` links (404), no documents: CHECK_DOCS). Old `gem_steel_rack` retired. Verdict mix from real data: ELIGIBLE 1, CHECK_DOCS 11, **NOT_ELIGIBLE 0** (not forced). Found: TinyFish's 300 s cap is soft (runs took 352 s and 471 s), so `agents/` now stops waiting at `AGENT_TIMEOUT` (330 s) → clean error card; blocked runs are recorded and replayed; GeM goal demands the exact `showbidDocument` href and guessed links are dropped.
 - Phase 6: `python -m delivery.seed --reset` (tenders, matches + alert flags, `sweep:*` Redis keys; reseeds Ramesh) and `scripts/preflight.py` (11 checks, PASS/WARN/FAIL, exit 1 on FAIL; TinyFish wallet read via the SDK: $15.18 ≈ 948 agent steps). Today it reports NOT READY: Docker down, Twilio unset, NOT_ELIGIBLE missing from the verdict mix.
 - Phase 7: verdict chips say "You can bid" / "Keep proof ready" / "Turnover short"·"Deadline passed"·"State not served" (icon + words, never colour alone); match page provenance line (found by TinyFish on <portal> · document fetch/direct/recorded · eligibility LLM/recorded · verdict by rules); Replay-mode badge with the demo clock; `:focus-visible` ring; eligibility table scrolls and row metrics wrap at 390 px; CORS from `WEB_ORIGINS`; DB down → plain 503 sentence, never a bare 500. No Playwright in the project, so no headless run: smoke-tested with the real build (`next start` + uvicorn, DB down): pages render loading shells, API answers 503 sentences, unknown route 404, no tracebacks. Full click-through of §0 waits for Docker (HUMAN TODO).
+- Phase 5 follow-up (C3): searched all 12 recorded open bids for corrigenda: none real, so no corrigenda fixture (never invented). The old filter flagged 4 of them from menu text ("Active Tenders | Corrigendum | Bid Awards") and boilerplate ("ATC and Corrigendum if any"); `is_corrigendum_notice` now needs a notice phrase ("Corrigendum 1", "date extended", "extended till <date>", "Amendment No. 2") within 250 chars of the bid number: 0 false positives on the same 12.
+- Phase 8: CLAUDE.md, PLAN.md, README and `.env.example` agree: Groq gpt-oss models, keyword-overlap ranking (OpenAI/1536-d embedding config removed), no Claude/OpenAI key needed, the Phase 1 invariant wording, `DEMO_NOW`, preflight, `seed --reset`, the Twilio trial-prefix note, real test counts and the soft-cap finding.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |
@@ -326,7 +325,7 @@ Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text la
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Groq free tier (Claude removed). 2 of 5 real GeM docs parsed on Groq with verbatim clauses (storage rack bid GEM/2026/B/7509529, IIM Indore GEM/2025/B/6356290) |
-| H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking until `OPENAI_API_KEY` is set; clause excerpts for highlighting |
+| H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking; clause excerpts for highlighting |
 | H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
 | H10–16 | Matches list UI | Aditya (built by Harsh) | ✅ | verdict chips with text labels, value, deadline countdown, fit; low-relevance folded |
 | H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | 🟡 | Tooling done: `python -m delivery.build_fixture attach/check`. Recording needs `TINYFISH_API_KEY` (live runs, set) and `GROQ_API_KEY` (parses, set) |
@@ -345,13 +344,14 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 61 tests, no keys needed (2 alert tests need Postgres running)
-cd web && npm test                # 14 tests
+python -m pytest -q tests         # 114 tests, no keys needed (2 alert tests + seed reset need Postgres/Redis running)
+cd web && npm test                # 19 tests
+python scripts/preflight.py       # before a demo: must print READY
 ```
 
 **Before every demo run (checklist):**
 1. `docker compose up -d` (or the app profile), `alembic upgrade head`, then **`python -m delivery.seed --reset`**: wipes tenders, matches (and their alert flags) and sweep logs, reseeds Ramesh, prints his id. The on-stage sweep then starts from nothing and alerts again.
 2. **`python scripts/preflight.py`** prints PASS / WARN / FAIL for: docker services, alembic at head, `/health`, web reachable + CORS for the web origin, `FALLBACK_MODE` / `DEMO_NOW`, every fixture "fixture OK", verdict mix, Twilio creds + `ALERT_WHATSAPP_TO`, TinyFish key + wallet, Groq key + models, ports. It must end in `READY`.
-3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone. (Preflight can't see this.)
+3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone. (Preflight can't see this.) Trial accounts prefix SMS with "Sent from your Twilio trial account -"; check on the first real send whether WhatsApp shows it too.
 4. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
 

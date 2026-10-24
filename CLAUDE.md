@@ -14,7 +14,7 @@ Built at **HackIIITD 2026** (24h in-person final at IIITD) by team **L.C Hard, J
 ## Solution (4 steps)
 1. **Profile once** — products, HSN codes, annual turnover, certifications (MSE/Udyam, Startup India, ISO), states served.
 2. **Agents sweep portals** — TinyFish Agent API opens each portal, filters, paginates, returns bids as JSON.
-3. **Read & match** — Fetch API pulls bid documents as text; LLM extracts eligibility into structured JSON with the source clause; rules check hard criteria; embeddings rank product fit.
+3. **Read & match** — Fetch API pulls bid documents as text; LLM extracts eligibility into structured JSON with the source clause; rules check hard criteria; keyword overlap ranks product fit.
 4. **Alert & act** — WhatsApp/email: tender, value, deadline, verdict, reasons, document checklist, link to source clause.
 
 Verdicts: `ELIGIBLE` (green) / `CHECK_DOCS` (amber) / `NOT_ELIGIBLE` with reason e.g. "Turnover short" (red).
@@ -29,8 +29,8 @@ Differentiators: reads eligibility not keywords; one profile across every portal
 ```
 Sources (GeM, CPPP, Haryana e-proc)
   -> TinyFish layer (Agent: navigate+extract | Fetch: bid docs->text | Search: corrigenda)
-  -> Processing (Pydantic validate + dedupe on bid_no | LLM eligibility parser | embeddings)
-  -> Store (Postgres: tenders, profiles, matches | pgvector: embeddings)
+  -> Processing (Pydantic validate + dedupe on bid_no | Groq eligibility parser, cached by doc_url | keyword-overlap fit)
+  -> Store (Postgres: tenders, profiles, matches)
   -> Serve (Matcher: rules + rank | FastAPI: REST + SSE)
   -> Users (Next.js dashboard with live agent panel | Twilio WhatsApp + email alerts)
 ```
@@ -55,13 +55,13 @@ Check the installed SDK for exact method names/signatures before assuming; adapt
 ## Hackathon scope (24h) — decided, don't expand
 - Portals: **GeM, CPPP, Haryana e-proc** only.
 - Scheduler: FastAPI background tasks / APScheduler + Redis pub/sub for SSE. **No Celery** (mention as scale path only).
-- WhatsApp: **Twilio sandbox**, not Meta Cloud API.
-- pgvector: one embedding per tender, one per profile, cosine rank.
-- **FALLBACK_MODE**: recorded real agent runs in `delivery/fixtures/*.json`; when `FALLBACK_MODE=true`, sweeps replay fixtures (still emitting SSE steps with small delays) so the demo survives bad wifi/portal downtime.
+- WhatsApp: **Twilio sandbox**, not Meta Cloud API. Twilio trial accounts prefix outgoing SMS with "Sent from your Twilio trial account -"; whether the WhatsApp sandbox does too isn't confirmed, so check the first real send (the message still leads with the verdict either way). The stage phone must have sent the sandbox join message within 24 h.
+- Ranking: keyword overlap between the profile's products/keywords and the tender title/item (no embedding key; the pgvector path in `api/embeddings.py` stays off).
+- **FALLBACK_MODE**: recorded real agent runs in `delivery/fixtures/*.json` (blocked runs too); deadlines then use a frozen clock (`DEMO_NOW`, else the newest fixture's `recorded_at`; `api/clock.py`); when `FALLBACK_MODE=true`, sweeps replay fixtures (still emitting SSE steps with small delays) so the demo survives bad wifi/portal downtime.
 - Captcha/blocked portals: skip and surface a direct link. **Never bypass captchas.** Read-only: never submit bids.
 
 ## Stack
-Python 3.11+, FastAPI, SQLAlchemy 2 + Alembic, psycopg, Pydantic v2, Redis, PostgreSQL 16 + pgvector, TinyFish SDK, Groq free tier (`openai/gpt-oss-120b` eligibility parser via strict JSON-schema output; `openai/gpt-oss-20b` light tasks; no Anthropic key, so Claude is not used), OpenAI `text-embedding-3-small` (1536-d) embeddings (optional; keyword-overlap ranking without a key), PyMuPDF (+ OCR fallback), Next.js + Tailwind, Twilio, Docker Compose.
+Python 3.11+, FastAPI, SQLAlchemy 2 + Alembic, psycopg, Pydantic v2, Redis, PostgreSQL 16 + pgvector, TinyFish SDK, Groq free tier (`openai/gpt-oss-120b` eligibility parser via strict JSON-schema output; `openai/gpt-oss-20b` light tasks; no Anthropic key, so Claude is not used), keyword-overlap ranking (no OpenAI key), PyMuPDF (+ OCR fallback), Next.js + Tailwind, Twilio, Docker Compose.
 
 ## Repo layout & ownership
 ```
@@ -71,12 +71,12 @@ web/        Next.js dashboard: profile form, live agents panel, matches, detail 
 delivery/   Twilio/email alerts, seed profiles, fixtures, fallback mode, docker (Vandan)
 tests/      pytest suite (no API keys needed); web/ has its own vitest suite
 ```
-Current status and the pre-demo checklist live in `PLAN.md` §9.
+Current status and the pre-demo checklist live in `PLAN.md` §9. Before a demo: `python -m delivery.seed --reset`, then `python scripts/preflight.py` (must print READY).
 
 ## Core data model (starting point)
-- `Tender`: id, portal, bid_no (unique with portal), title, item, ministry/buyer, quantity, est_value, end_date, doc_url, doc_text, eligibility (JSONB), embedding, corrigenda (JSONB), created_at, updated_at
+- `Tender`: id, portal, bid_no (unique with portal), title, item, ministry/buyer, quantity, est_value, end_date, doc_url, doc_text, doc_source, eligibility (JSONB), eligibility_source, corrigenda (JSONB), created_at, updated_at
 - `Eligibility` JSON: `min_turnover`, `past_experience_years`, `emd_amount`, `emd_exemption_for_mse`, `required_certifications[]`, `states[]`, each criterion with `source_clause` text
-- `Profile`: id, name, phone, products[], hsn_codes[], annual_turnover, years_in_business, certifications[], states_served[], embedding
+- `Profile`: id, name, phone, products[], hsn_codes[], annual_turnover, years_in_business, certifications[], states_served[]
 - `Match`: profile_id, tender_id, verdict, reasons[], missing_docs[], fit_score, alerted_at
 
 ## Demo (3 min) — everything serves this
@@ -89,7 +89,7 @@ Example match: "Supply of steel storage racks · MoD · ₹18.5 L · closes 28 O
 ## Timeline & checkpoints (merge to main at each)
 - H0–4: skeleton, TinyFish goals for 3 portals, schemas, first live GeM run saved to fixtures
 - H4–10: Postgres upsert/dedupe, /sweep endpoint, Fetch for docs, SSE streaming, profile form
-- H10–16: LLM eligibility extraction, matcher, embeddings, Search corrigenda, **fixtures recorded by H12**
+- H10–16: LLM eligibility extraction, matcher, ranking, Search corrigenda, **fixtures recorded by H12**
 - H16–21: WhatsApp alert, match detail UI, error states → tag `v0.1-demo`
 - H21–24: **fix-only freeze**, README, rehearse live + fallback
 

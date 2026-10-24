@@ -29,7 +29,7 @@ So owners check portals late at night, or pay consultants **₹5–20k a month**
 |---|---|---|
 | 1 | **Profile once** | Products, HSN codes, turnover, certifications (Udyam, Startup India, ISO), states served |
 | 2 | **Agents sweep portals** | TinyFish agents open each portal, search, filter, paginate and return bids as validated JSON |
-| 3 | **Read & match** | Bid documents become text; an LLM pulls out every eligibility criterion **with the exact source clause**; rules check hard criteria; embeddings rank product fit |
+| 3 | **Read & match** | Bid documents become text; an LLM pulls out every eligibility criterion **with the exact source clause**; rules check hard criteria; keyword overlap ranks product fit |
 | 4 | **Alert & act** | WhatsApp / email with the tender, value, deadline, verdict, reasons and document checklist |
 
 > **Supply of steel storage racks** · MoD · ₹18.5 L · closes 28 Oct
@@ -56,11 +56,11 @@ flowchart LR
 
     subgraph Proc["⚙️ Processing — api/"]
         VAL[Pydantic validate<br/>dedupe on portal+bid_no]
-        LLM[Eligibility parser<br/>Claude Sonnet]
-        EMB[Embeddings<br/>text-embedding-3-small]
+        LLM[Eligibility parser<br/>Groq gpt-oss-120b]
+        EMB[Product fit<br/>keyword overlap]
     end
 
-    DB[(Postgres 16<br/>+ pgvector)]
+    DB[(Postgres 16)]
     API[FastAPI<br/>REST + SSE]
     UI[Next.js dashboard<br/>live agents panel]
     WA[Twilio WhatsApp<br/>+ email]
@@ -77,7 +77,7 @@ flowchart LR
 | TinyFish API | Used for | When |
 |---|---|---|
 | **Agent** | Opens a portal, searches, paginates, extracts bids (streamed step by step to the UI) | Listing sweeps only, never per user |
-| **Fetch** | Renders a bid page or document to clean text for the LLM (GeM PDFs currently fail with `proxy_error`; saved PDFs are attached instead) | Once per new bid |
+| **Fetch** | Renders a bid page or document to clean text for the LLM (GeM PDFs fail with `proxy_error`; `agents/` then downloads the PDF itself) | Once per new bid, reused by `doc_url` afterwards |
 | **Search** | Finds corrigenda, deadline extensions, buyer context | Daily per active bid |
 
 ## Status
@@ -85,18 +85,20 @@ flowchart LR
 This is a 24-hour hackathon build. What exists right now:
 
 - [x] **Agents layer** (`agents/`): TinyFish wrapper, schemas, goals for GeM / CPPP / Haryana, CLI, fixture recorder, offline replay
-- [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, Claude eligibility parser, matcher with embeddings and clause excerpts, daily corrigenda job (61 backend tests, 14 dashboard tests)
+- [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, eligibility parser on Groq's free tier (`openai/gpt-oss-120b`, strict JSON schema), rules matcher with keyword-overlap ranking and clause excerpts, parse cache + background parsing, daily corrigenda job, one demo clock (`DEMO_NOW`)
 - [x] **Dashboard** (`web/`): Next.js 16 — profile form, live agents panel (4 cards over SSE), matches with verdict chips, match detail with the source clause highlighted in the bid text, alert button
 - [x] **Alerts** (`delivery/alerts.py`): WhatsApp via the Twilio sandbox and email via SMTP; `POST /matches/{id}/alert`; new eligible matches are alerted after each sweep
-- [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
-- [ ] **Demo-ready fixtures**: the first GeM recording holds unrelated, closed bids. Re-record "storage rack" and attach bid documents (see below); needs `TINYFISH_API_KEY` and `GROQ_API_KEY`
-- [ ] **Live document text for GeM**: TinyFish Fetch gets `proxy_error` on GeM bid PDFs, so live sweeps have no document text yet (saved PDFs work)
+- [x] **Infra** (`delivery/`): Docker Compose for Postgres and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
+- [x] **Real fixtures**: GeM storage rack (parsed, ELIGIBLE), CPPP storage rack (3 bids, no readable documents), Haryana (captcha: replays as the blocked card), GeM steel almirah (8 bids). Real verdict mix: 1 ELIGIBLE, 11 CHECK_DOCS, 0 NOT_ELIGIBLE
+- [x] **Live document text for GeM**: Fetch, else a direct PDF download in `agents/`
+- [x] **Preflight + clean state**: `python scripts/preflight.py`, `python -m delivery.seed --reset`
+- [ ] **Twilio sandbox + stage phone**, and a full click-through with Docker running (see PLAN.md §9)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
 
 ## Quickstart
 
-Requires Python 3.11+, Docker, and a [TinyFish API key](https://tinyfish.ai).
+Requires Python 3.11+, Docker, a [TinyFish API key](https://tinyfish.ai) and a free [Groq API key](https://console.groq.com). No Anthropic or OpenAI key is needed.
 
 ```bash
 git clone https://github.com/siddhant1729/Tenderhawk.git
@@ -109,7 +111,7 @@ cp .env.example .env        # then fill in the keys
 ### Run the API
 
 ```bash
-docker compose up -d              # Postgres 16 + pgvector, Redis
+docker compose up -d              # Postgres 16, Redis
 alembic upgrade head
 python -m delivery.seed           # creates Ramesh's profile, prints its id (--reset: clean demo state first)
 uvicorn api.main:app --reload     # http://localhost:8000
@@ -122,7 +124,7 @@ curl -N localhost:8000/sweeps/<sweep_id>/events      # live agent steps (SSE)
 curl localhost:8000/profiles/<id>/matches            # relevant first, then verdict, then fit
 ```
 
-Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no network and no credits.
+Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no network and no credits. Deadlines then run on a frozen clock (`DEMO_NOW`, else the newest fixture's `recorded_at`), so recorded bids never expire.
 
 ### Run the dashboard
 
@@ -134,9 +136,14 @@ Or run everything in Docker: `docker compose --profile app up -d --build` starts
 and the dashboard on :3000 (move a busy host port with e.g. `REDIS_PORT=6380`). A single-page fallback console is
 also served by the API at `/demo`.
 
-Before a demo, run through the checklist at the end of [`PLAN.md`](PLAN.md): fixtures pass
-`python -m delivery.build_fixture check`, the stage phone has joined the Twilio sandbox in the last 24 h, and
-`python -m delivery.alerts reset` clears rehearsal alerts so the on-stage sweep alerts again; `python -m delivery.seed --reset` wipes all demo state (tenders, matches, alert flags, sweep logs) and reseeds Ramesh. Before the demo, `python scripts/preflight.py` checks the whole stack and must print `READY`.
+Before a demo (checklist at the end of [`PLAN.md`](PLAN.md)):
+
+```bash
+python -m delivery.seed --reset   # wipe tenders, matches, alert flags and sweep logs; reseed Ramesh
+python scripts/preflight.py       # PASS/WARN/FAIL for the whole stack; must end in READY
+```
+
+Twilio trial accounts prefix outgoing SMS with "Sent from your Twilio trial account -"; whether the WhatsApp sandbox does too isn't confirmed, so check the first real send (the message still leads with the verdict either way). The stage phone must have sent the sandbox join message within 24 h.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -202,7 +209,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `FALLBACK_MODE` | `true` replays `delivery/fixtures/*.json` instead of live runs |
 | `DEMO_NOW` | Fallback only: the frozen "now" for deadlines (ISO, IST if no offset). Empty = the newest fixture's `recorded_at`, so recorded bids never expire |
 | `GROQ_API_KEY`, `LLM_MODEL`, `LLM_MODEL_FAST` | Eligibility parser on Groq's free tier (`openai/gpt-oss-120b`, strict JSON schema) and light tasks (`openai/gpt-oss-20b`) |
-| `OPENAI_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` | Optional `text-embedding-3-small`, 1536 dims; without a key, ranking uses keyword overlap |
+| `OPENAI_API_KEY` | Not needed. Product fit is keyword overlap; `api/embeddings.py` would switch to OpenAI embeddings only if a key were set |
 | `LLM_EFFORT`, `LLM_MAX_DOC_CHARS`, `LLM_CONCURRENCY` | Parser reasoning effort; characters sent per document and documents parsed at once (free tier: 8k tokens/min) |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
 | `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
@@ -232,7 +239,7 @@ tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 - 🚫 **Never bypass a captcha.** A blocked portal is skipped and the user gets a direct link.
 - 👀 **Read-only.** TenderHawk never submits or participates in a bid.
 - 🇮🇳 Agent runs go through an Indian proxy, because government portals drop connections from foreign IPs.
-- ⏱️ Agent runs are capped at 30 steps / 300 s, so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
+- ⏱️ Agent runs stop at 330 s (TinyFish's own 300 s cap is soft), so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
 - 🔑 Config comes from env vars only; secrets never enter the repo.
 
 ## Who it's for
