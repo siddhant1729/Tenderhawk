@@ -1,18 +1,23 @@
 """TenderHawk API. Run: uvicorn api.main:app --reload"""
+import asyncio
 import uuid
 
 import redis
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session, selectinload
 
 from api.config import REDIS_URL, fallback_mode
 from api import events
 from api.db import engine, get_db
-from api.models import Profile
-from api.schemas import Created, ProfileIn, ProfileOut, SweepIn, SweepOut
+from api.documents import excerpt
+from api.matcher import VERDICT_RANK
+from api.matching import rematch
+from api.models import Match, Profile
+from api.schemas import (Created, MatchDetail, MatchRunOut, MatchSummary, ProfileIn, ProfileOut, SweepIn,
+                         SweepOut)
 from api.sweeps import run_sweep
 
 app = FastAPI(title="TenderHawk")
@@ -29,7 +34,7 @@ def health():
     except Exception:
         pass
     try:
-        status["redis"] = bool(redis.Redis.from_url(REDIS_URL, socket_timeout=1).ping())
+        status["redis"] = bool(redis.Redis.from_url(REDIS_URL, socket_timeout=1, socket_connect_timeout=1).ping())
     except Exception:
         pass
     return status
@@ -67,3 +72,37 @@ def sweep_events(sweep_id: str):
         raise HTTPException(404, "sweep not found")
     return StreamingResponse(events.stream(sweep_id), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.get("/profiles/{profile_id}/matches", response_model=list[MatchSummary])
+def list_matches(profile_id: int, include_low_relevance: bool = True, db: Session = Depends(get_db)):
+    """Relevant first, then ELIGIBLE > CHECK_DOCS > NOT_ELIGIBLE, then best fit, then soonest deadline."""
+    if not db.get(Profile, profile_id):
+        raise HTTPException(404, "profile not found")
+    q = select(Match).where(Match.profile_id == profile_id).options(selectinload(Match.tender))
+    if not include_low_relevance:
+        q = q.where(Match.relevant.is_(True))
+    matches = db.scalars(q).all()
+    return sorted(matches, key=lambda m: (not m.relevant, VERDICT_RANK[m.verdict], -(m.fit_score or 0),
+                                          m.tender.end_date))
+
+
+@app.get("/matches/{match_id}", response_model=MatchDetail)
+def get_match(match_id: int, db: Session = Depends(get_db)):
+    m = db.get(Match, match_id)
+    if not m:
+        raise HTTPException(404, "match not found")
+    t = m.tender
+    reasons = [{**r, "excerpt": excerpt(t.doc_text or "", r.get("source_clause") or "")} for r in m.reasons]
+    return MatchDetail(id=m.id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
+                       missing_docs=m.missing_docs, alerted_at=m.alerted_at, tender=t,
+                       eligibility=t.eligibility, corrigenda=t.corrigenda or [])
+
+
+@app.post("/profiles/{profile_id}/match", response_model=MatchRunOut)
+def run_match(profile_id: int, db: Session = Depends(get_db)):
+    """Re-run the matcher on stored tenders without sweeping (e.g. after editing the profile)."""
+    if not db.get(Profile, profile_id):
+        raise HTTPException(404, "profile not found")
+    db.close()
+    return asyncio.run(rematch(profile_id))  # sync endpoint runs in a worker thread with no event loop

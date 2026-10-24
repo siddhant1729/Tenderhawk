@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import (BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func)
+from sqlalchemy import (BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -29,7 +29,7 @@ class Tender(Timestamps, Base):
     title: Mapped[str] = mapped_column(Text)
     item: Mapped[str | None] = mapped_column(Text)
     buyer: Mapped[str | None] = mapped_column(Text)
-    quantity: Mapped[str | None] = mapped_column(String(64))
+    quantity: Mapped[str | None] = mapped_column(Text)  # free text from portals; never cap it
     est_value: Mapped[float | None] = mapped_column(Float)
     end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     doc_url: Mapped[str | None] = mapped_column(Text)
@@ -70,6 +70,7 @@ class Match(Timestamps, Base):
     reasons: Mapped[list] = mapped_column(JSONB, default=list)        # [{"text", "source_clause", "kind"}]
     missing_docs: Mapped[list] = mapped_column(JSONB, default=list)
     fit_score: Mapped[float | None] = mapped_column(Float)
+    relevant: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")  # fit above threshold
     alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     profile: Mapped[Profile] = relationship(back_populates="matches")

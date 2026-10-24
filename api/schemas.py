@@ -1,4 +1,6 @@
 """API request/response models (PLAN.md §3.5)."""
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -30,3 +32,50 @@ class SweepIn(BaseModel):
 
 class SweepOut(BaseModel):
     sweep_id: str
+
+
+class TenderSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    portal: str
+    bid_no: str
+    title: str
+    item: str | None
+    buyer: str | None
+    quantity: str | None
+    est_value: float | None
+    end_date: datetime
+    source_url: str
+    doc_url: str | None
+
+
+class Reason(BaseModel):
+    kind: str            # ok | info | warn | fail
+    criterion: str
+    text: str
+    source_clause: str | None
+    excerpt: dict | None = None   # detail only: {text, highlight_start, highlight_end, ...}
+
+
+class MatchSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    verdict: str
+    fit_score: float | None
+    relevant: bool
+    reasons: list[Reason]
+    missing_docs: list[str]
+    alerted_at: datetime | None
+    tender: TenderSummary
+
+
+class MatchDetail(MatchSummary):
+    eligibility: dict | None
+    corrigenda: list
+
+
+class MatchRunOut(BaseModel):
+    counts: dict[str, int]
+    relevant: int = 0
+    total: int = 0
+    method: str = "keywords"
