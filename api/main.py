@@ -2,10 +2,11 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import redis
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
@@ -121,3 +122,9 @@ def run_match(profile_id: int, db: Session = Depends(get_db)):
 async def corrigenda_check_now():
     """Run the daily corrigenda job now (demo button / ops). TinyFish Search costs no credits."""
     return await scheduler.daily_corrigenda()
+
+
+@app.get("/demo", include_in_schema=False)
+def demo_page():
+    """Single-page demo console (stopgap until the Next.js dashboard in web/)."""
+    return FileResponse(Path(__file__).parent / "static" / "demo.html", media_type="text/html")
