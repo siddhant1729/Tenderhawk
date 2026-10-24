@@ -114,7 +114,9 @@ The two `*_relaxation_*` flags come straight from GeM bid documents: when MSE re
 | `GET` | `/profiles/{id}/matches` | list: tender summary + verdict + fit_score, sorted |
 | `GET` | `/matches/{id}` | tender, eligibility (§3.4), verdict, reasons, missing_docs, corrigenda |
 | `POST` | `/matches/{id}/alert` | sends WhatsApp/email now (demo button) |
-| `GET` | `/health` | `{db, redis, fallback_mode}` |
+| `GET` | `/health` | `{db, redis, fallback_mode, next_corrigenda_check}` |
+| `POST` | `/profiles/{id}/match` | re-run the matcher on stored tenders without sweeping → verdict counts |
+| `POST` | `/corrigenda/check` | run the daily corrigenda job now (Search API, no credits) → `{checked, new, extended}` |
 
 ### 3.6 Matcher verdict rules (`api/matcher.py`)
 Hard rules first, then rank by cosine similarity (profile embedding vs tender embedding).
@@ -156,6 +158,8 @@ LLM_MODEL_FAST=claude-haiku-5-5
 LLM_EFFORT=medium            # effort for the eligibility parser
 LLM_FALLBACKS=true           # server-side refusal fallback (Claude API only)
 LIVE_MAX_KEYWORDS=1          # profile keywords per live sweep; each one is a billed Agent run per portal
+SCHEDULER_ENABLED=true       # daily corrigenda job inside the API process (APScheduler)
+CORRIGENDA_HOUR=7            # IST hour for the daily corrigenda job
 OPENAI_API_KEY=
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIM=1536
@@ -256,6 +260,8 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
+All backend work below is pushed to `feat/backend` and **not yet merged to `main`**. `POST /matches/{id}/alert` (§3.5) is the only listed endpoint not built yet.
+
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
 | H0–4 | TinyFish wrapper, schemas, goals, CLI | Siddhant | ✅ | merged to `main` |
@@ -269,7 +275,7 @@ Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 | H4–10 | Live agents panel (SSE) | Aditya | ⬜ | |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | built and tested against a stub API; needs `ANTHROPIC_API_KEY` for the "5 real GeM docs" check |
 | H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking until `OPENAI_API_KEY` is set; clause excerpts for highlighting |
-| H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant | ⬜ | `search_corrigenda` exists in `agents/`, not yet scheduled or wired to SSE |
+| H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
 | H10–16 | Matches list UI | Aditya | ⬜ | |
 | H10–16 | Fixtures GeM/CPPP/Haryana × "steel racks" + doc texts + parses | Vandan | ⬜ | blocks the wifi-off demo |
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan | ⬜ | |
@@ -285,5 +291,5 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 30 tests, no keys needed
+python -m pytest -q tests         # 42 tests, no keys needed
 ```
