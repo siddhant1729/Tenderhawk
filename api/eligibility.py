@@ -41,7 +41,9 @@ class Eligibility(BaseModel):
     emd_amount: NumberCriterion = Field(
         description="Earnest Money Deposit (EMD / bid security) in rupees. 0 if EMD is explicitly not required.")
     emd_exemption_for_mse: FlagCriterion = Field(
-        description="true if Micro and Small Enterprises (MSE / Udyam registered) are exempted from paying EMD.")
+        description="true if Micro and Small Enterprises (MSE / Udyam registered) are exempted from paying EMD. "
+                    "GeM states this in its 'EMD EXEMPTION' paragraph (e.g. 'Under MSE category, only manufacturers "
+                    "... are eligible for exemption from EMD'): that is true, quote that sentence.")
     mse_relaxation_experience_turnover: FlagCriterion = Field(
         description="The 'MSE Relaxation for Years of Experience and Turnover' value: true if Yes, false if No.")
     startup_relaxation_experience_turnover: FlagCriterion = Field(
@@ -68,6 +70,9 @@ Rules:
 
 async def parse_eligibility(doc_text: str) -> dict:
     """Returns the §3.4 dict. Raises llm.LLMError when the model can't produce a valid result."""
+    limit = llm.max_doc_chars()
+    if limit and len(doc_text) > limit:
+        doc_text = doc_text[:limit]
     el = await llm.extract(SYSTEM, f"<bid_document>\n{doc_text}\n</bid_document>", Eligibility)
     return el.model_dump()
 

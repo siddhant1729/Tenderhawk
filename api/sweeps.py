@@ -12,6 +12,7 @@ import os
 from agents.client import FIXTURES_DIR, fetch_doc_text, sweep_portal
 from agents.goals import PORTALS
 from agents.schemas import BidListing, StepEvent
+from api import llm
 from api.config import fallback_mode
 from api.corrigenda import card_emitter, check_corrigenda
 from api.db import SessionLocal
@@ -26,7 +27,6 @@ from api.tenders import (save_doc_text, save_eligibility, tenders_missing_eligib
 
 log = logging.getLogger("api.sweeps")
 DOC_FETCH_CONCURRENCY = 4
-LLM_CONCURRENCY = 4
 DOC_FETCH_TIMEOUT = 90     # seconds per document
 PARSE_TIMEOUT = 240        # seconds per document (LLM)
 # Each live keyword is one billed TinyFish Agent run per portal (~150 s). Fixture replay is free.
@@ -123,7 +123,7 @@ async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
     publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
                       message=f"Reading eligibility criteria from {len(todo)} documents"))
     recorded = await asyncio.to_thread(_fixture_eligibility) if fallback_mode() else {}
-    sem = asyncio.Semaphore(LLM_CONCURRENCY)
+    sem = asyncio.Semaphore(llm.concurrency())
 
     async def one(tid: int, doc_url: str | None, text: str) -> bool:
         try:
