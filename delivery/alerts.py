@@ -165,6 +165,26 @@ def _mark_alerted(match_id: int) -> None:
         db.commit()
 
 
+def preview_match(match_id: int) -> str | None:
+    """The exact WhatsApp/email text alert_match would send, without sending it. None if no such match."""
+    m = _load(match_id)
+    return None if m is None else format_message(m)
+
+
+def _mask(number: str) -> str:
+    """+919811244321 -> +91•••••4321: enough to recognise the stage phone, not to copy it."""
+    digits = number.replace("whatsapp:", "").strip()
+    return f"{digits[:3]}•••••{digits[-4:]}" if len(digits) > 6 else digits
+
+
+def channel_status() -> dict:
+    """Which alert channels are set up (no secrets), for the dashboard's WhatsApp page."""
+    wa = all(_env(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM"))
+    return {"whatsapp": wa, "email": bool(_env("SMTP_URL")), "auto_alert": auto_alert_enabled(),
+            "auto_alert_max": AUTO_ALERT_MAX, "whatsapp_to": _mask(_env("ALERT_WHATSAPP_TO")) or None,
+            "email_to": _env("ALERT_EMAIL_TO") or None}
+
+
 async def alert_match(match_id: int) -> dict | None:
     """Send this match on every configured channel. None if the match doesn't exist."""
     m = await asyncio.to_thread(_load, match_id)

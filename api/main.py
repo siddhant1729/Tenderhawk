@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from api.clock import demo_now, now_ist
 from api.config import REDIS_URL, WEB_ORIGINS, fallback_mode
 from api import events, scheduler
-from delivery.alerts import alert_match
+from delivery.alerts import alert_match, channel_status, preview_match
 from api.db import engine, get_db
 from api.documents import excerpt
 from api.matcher import VERDICT_RANK
@@ -152,6 +152,21 @@ def run_match(profile_id: int, db: Session = Depends(get_db)):
 async def corrigenda_check_now():
     """Run the daily corrigenda job now (demo button / ops). TinyFish Search costs no credits."""
     return await scheduler.daily_corrigenda()
+
+
+@app.get("/matches/{match_id}/alert/preview")
+def alert_preview(match_id: int):
+    """The alert text for this match, without sending it."""
+    text = preview_match(match_id)
+    if text is None:
+        raise HTTPException(404, "match not found")
+    return {"preview": text}
+
+
+@app.get("/alerts/status")
+def alerts_status():
+    """Which alert channels are configured (no secrets)."""
+    return channel_status()
 
 
 @app.post("/matches/{match_id}/alert")
