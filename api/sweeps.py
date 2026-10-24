@@ -13,6 +13,7 @@ from agents.client import FIXTURES_DIR, fetch_doc_text, sweep_portal
 from agents.goals import PORTALS
 from agents.schemas import BidListing, StepEvent
 from api.config import fallback_mode
+from api.corrigenda import card_emitter, check_corrigenda
 from api.db import SessionLocal
 from api.documents import to_text
 from api.eligibility import parse_eligibility
@@ -148,12 +149,25 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
                               message="Profile has no keywords or products to search for"))
             summary = "Nothing to search for"
             return
+        corr_card = card_emitter(sweep_id, publish)
+        corr_card("started", "Waiting for bids from the portals", None)
         per_portal = await asyncio.gather(
             *(_sweep_portal_all_keywords(sweep_id, p, keywords) for p in PORTALS))
         bids = [b for bs in per_portal for b in bs]
         all_ids, new_ids = await asyncio.to_thread(upsert_tenders, bids)
-        read = await _fetch_docs(sweep_id, all_ids)
-        parsed = await _parse_docs(sweep_id, all_ids)
+
+        async def documents() -> tuple[int, int]:
+            return await _fetch_docs(sweep_id, all_ids), await _parse_docs(sweep_id, all_ids)
+
+        async def corrigenda() -> dict:
+            try:
+                return await check_corrigenda(all_ids, corr_card)
+            except Exception as e:
+                log.exception("corrigenda check failed")
+                corr_card("error", f"Corrigenda check failed: {e}", None)
+                return {"new": 0}
+
+        (read, parsed), corr = await asyncio.gather(documents(), corrigenda())
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
                           message="Matching tenders against your profile"))
         m = await rematch(profile_id)
@@ -162,7 +176,8 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
         summary = (f"{len(all_ids)} tenders found ({len(new_ids)} new), {read} documents read, {parsed} parsed. "
                    f"{c.get('ELIGIBLE', 0)} eligible, {c.get('CHECK_DOCS', 0)} check docs, "
                    f"{c.get('NOT_ELIGIBLE', 0)} not eligible"
-                   + (f", {low} low-relevance hidden" if low else ""))
+                   + (f", {low} low-relevance hidden" if low else "")
+                   + (f". {corr['new']} new corrigenda" if corr.get("new") else ""))
     except Exception as e:
         log.exception("sweep %s failed", sweep_id)
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="error", message=f"Sweep failed: {e}"))

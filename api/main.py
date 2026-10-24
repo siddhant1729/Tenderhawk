@@ -1,6 +1,7 @@
 """TenderHawk API. Run: uvicorn api.main:app --reload"""
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 
 import redis
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
@@ -10,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from api.config import REDIS_URL, fallback_mode
-from api import events
+from api import events, scheduler
 from api.db import engine, get_db
 from api.documents import excerpt
 from api.matcher import VERDICT_RANK
@@ -20,13 +21,21 @@ from api.schemas import (Created, MatchDetail, MatchRunOut, MatchSummary, Profil
                          SweepOut)
 from api.sweeps import run_sweep
 
-app = FastAPI(title="TenderHawk")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.start()
+    yield
+    scheduler.stop()
+
+
+app = FastAPI(title="TenderHawk", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
 @app.get("/health")
 def health():
-    status = {"db": False, "redis": False, "fallback_mode": fallback_mode()}
+    status = {"db": False, "redis": False, "fallback_mode": fallback_mode(),
+              "next_corrigenda_check": scheduler.next_run()}
     try:
         with engine.connect() as c:
             c.execute(text("SELECT 1"))
@@ -106,3 +115,9 @@ def run_match(profile_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "profile not found")
     db.close()
     return asyncio.run(rematch(profile_id))  # sync endpoint runs in a worker thread with no event loop
+
+
+@app.post("/corrigenda/check")
+async def corrigenda_check_now():
+    """Run the daily corrigenda job now (demo button / ops). TinyFish Search costs no credits."""
+    return await scheduler.daily_corrigenda()

@@ -54,6 +54,7 @@ class Reason(BaseModel):
     criterion: str
     text: str
     source_clause: str | None
+    source_url: str | None = None  # corrigenda: link to the notice
     excerpt: dict | None = None   # detail only: {text, highlight_start, highlight_end, ...}
 
 

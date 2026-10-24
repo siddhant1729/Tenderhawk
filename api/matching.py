@@ -63,7 +63,7 @@ def match_profile(profile_id: int) -> dict:
 
         values = []
         for t in tenders:
-            r = evaluate(facts, t.end_date, t.eligibility)
+            r = evaluate(facts, t.end_date, t.eligibility, corrigenda=t.corrigenda)
             values.append({"profile_id": p.id, "tender_id": t.id, "verdict": r.verdict, "reasons": r.reasons,
                            "missing_docs": r.missing_docs, "fit_score": fits[t.id],
                            "relevant": fits[t.id] >= threshold})

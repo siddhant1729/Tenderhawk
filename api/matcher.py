@@ -63,16 +63,24 @@ def _crit(el: dict, key: str) -> tuple:
     return c.get("value"), c.get("source_clause")
 
 
-def evaluate(p: ProfileFacts, end_date: datetime, eligibility: dict | None, now: datetime | None = None) -> Result:
+def evaluate(p: ProfileFacts, end_date: datetime, eligibility: dict | None, now: datetime | None = None,
+             corrigenda: list[dict] | None = None) -> Result:
     now = now or datetime.now(IST)
     reasons: list[dict] = []
     docs: list[str] = []
 
-    def add(kind: str, criterion: str, text: str, clause: str | None = None) -> None:
-        reasons.append({"kind": kind, "criterion": criterion, "text": text, "source_clause": clause})
+    def add(kind: str, criterion: str, text: str, clause: str | None = None, url: str | None = None) -> None:
+        reasons.append({"kind": kind, "criterion": criterion, "text": text, "source_clause": clause,
+                        "source_url": url})
 
     if end_date < now:
         add(FAIL, "deadline", f"Deadline passed (closed {end_date.astimezone(IST):%d %b, %I:%M %p})")
+
+    for c in corrigenda or []:
+        ext = c.get("extends_to")
+        text = (f"Deadline extended to {datetime.fromisoformat(ext).astimezone(IST):%d %b}" if ext
+                else "Corrigendum posted")
+        add(INFO, "corrigendum", text, c.get("summary"), c.get("source_url"))
 
     if not eligibility:
         add(WARN, "document", "Couldn't read eligibility from the bid document. Check the document yourself.")
