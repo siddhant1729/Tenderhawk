@@ -110,6 +110,16 @@ export interface Health {
   clock: "real" | "DEMO_NOW" | "fixture recorded_at";
 }
 
+/** GET /alerts/status: which channels are set up (no secrets). */
+export interface AlertStatus {
+  whatsapp: boolean;
+  email: boolean;
+  auto_alert: boolean;
+  auto_alert_max: number;
+  whatsapp_to: string | null;   // masked, e.g. +91•••••4321
+  email_to: string | null;
+}
+
 export interface AlertResult {
   match_id: number;
   sent: boolean;

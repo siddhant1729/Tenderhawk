@@ -1,5 +1,5 @@
 import { syncFromServer } from "./clock";
-import type { AlertResult, Health, MatchDetail, MatchSummary, Profile, ProfileInput } from "./types";
+import type { AlertResult, AlertStatus, Health, MatchDetail, MatchSummary, Profile, ProfileInput } from "./types";
 
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
@@ -55,6 +55,8 @@ export const api = {
   matches: (profileId: number) => withClock(() => call<MatchSummary[]>(`/profiles/${profileId}/matches`)),
   match: (id: number) => withClock(() => call<MatchDetail>(`/matches/${id}`)),
   alert: (id: number) => call<AlertResult>(`/matches/${id}/alert`, { method: "POST" }),
+  alertPreview: (id: number) => call<{ preview: string }>(`/matches/${id}/alert/preview`),
+  alertStatus: () => call<AlertStatus>("/alerts/status"),
   rematch: (profileId: number) => call<{ counts: Record<string, number> }>(`/profiles/${profileId}/match`, { method: "POST" }),
 };
 

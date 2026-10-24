@@ -26,14 +26,14 @@ const RAMESH = {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-sm font-semibold">{label}</span>
+      <span className="text-sm font-semibold text-slate-900">{label}</span>
       {children}
-      {hint && <span className="text-xs text-ink-soft">{hint}</span>}
+      {hint && <span className="text-xs text-slate-500">{hint}</span>}
     </label>
   );
 }
 
-const input = "rounded-lg border border-line bg-white px-3 py-2 focus:outline-2 focus:outline-hawk";
+const input = "h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-600/10";
 
 export default function ProfileForm() {
   const router = useRouter();
@@ -59,11 +59,11 @@ export default function ProfileForm() {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-line bg-card p-6">
+    <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">Your business, once</h2>
+        <h2 className="text-xl font-bold text-slate-900">Your business, once</h2>
         <button type="button" onClick={() => { setF(RAMESH); setError(null); }}
-                className="rounded-lg border border-ink/20 px-3 py-1.5 text-sm font-semibold hover:bg-paper-2">
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 hover:bg-slate-50">
           Fill with demo: Ramesh, steel fabrication
         </button>
       </div>
@@ -89,14 +89,14 @@ export default function ProfileForm() {
         <Field label="States you serve" hint="Comma-separated"><input className={input} value={f.states} onChange={set("states")} /></Field>
       </div>
       <fieldset className="flex flex-col gap-2">
-        <legend className="text-sm font-semibold">Certifications and registrations</legend>
+        <legend className="text-sm font-semibold text-slate-900">Certifications and registrations</legend>
         <div className="flex flex-wrap gap-2">
           {CERTS.map((c) => {
             const on = f.certs.includes(c);
             return (
               <button type="button" key={c} aria-pressed={on}
                       onClick={() => setF({ ...f, certs: on ? f.certs.filter((x) => x !== c) : [...f.certs, c] })}
-                      className={`rounded-full border px-3 py-1 text-sm ${on ? "border-ink bg-ink text-paper" : "border-line bg-white"}`}>
+                      className={`rounded-full border px-3 py-1 text-sm font-medium ${on ? "border-navy bg-navy text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
                 {on ? "✓ " : ""}{c}
               </button>
             );
@@ -104,8 +104,8 @@ export default function ProfileForm() {
         </div>
         <input className={input} placeholder="Others, comma-separated (e.g. BIS, ISO 14001)" value={f.otherCerts} onChange={set("otherCerts")} />
       </fieldset>
-      {error && <p role="alert" className="rounded-lg bg-bad-bg px-3 py-2 text-bad">{error}</p>}
-      <button disabled={busy} className="self-start rounded-lg bg-hawk px-5 py-2.5 font-semibold text-white disabled:opacity-60">
+      {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
+      <button disabled={busy} className="self-start rounded-lg bg-amber px-5 py-2.5 font-semibold text-slate-950 shadow-sm hover:bg-amber-hover disabled:opacity-60">
         {busy ? "Saving…" : "Save profile and open dashboard"}
       </button>
     </form>

@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import HealthBanner from "@/components/HealthBanner";
+import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+
+// Self-hosted at build time: no request to Google when the page loads (the fallback demo runs offline).
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const grotesk = Space_Grotesk({ subsets: ["latin"], weight: ["500", "600", "700"], variable: "--font-grotesk",
+                                display: "swap" });
 
 export const metadata: Metadata = {
   title: "TenderHawk",
@@ -10,24 +14,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col font-sans">
-        <header className="bg-ink text-paper">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-6">
-            <Link href="/" className="text-xl font-bold tracking-tight">
-              🦅 TenderHawk
-            </Link>
-            <nav className="flex gap-4 text-sm text-paper/80">
-              <Link href="/" className="hover:text-paper">New profile</Link>
-            </nav>
-          </div>
-        </header>
-        <HealthBanner />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
-        <footer className="mx-auto w-full max-w-6xl px-4 py-6 text-sm text-ink-soft">
-          Read-only: TenderHawk never submits bids and never bypasses captchas.
-        </footer>
-      </body>
+    <html lang="en" className={`h-full scroll-smooth ${inter.variable} ${grotesk.variable}`}>
+      <body className="flex min-h-full flex-col font-sans">{children}</body>
     </html>
   );
 }

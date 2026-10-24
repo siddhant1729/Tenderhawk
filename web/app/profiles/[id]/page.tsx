@@ -1,11 +1,14 @@
-import { notFound } from "next/navigation";
-import Dashboard from "@/components/Dashboard";
+import FollowSweep from "@/components/app/FollowSweep";
+import LiveMatches from "@/components/app/LiveMatches";
 
-export default async function ProfilePage(props: PageProps<"/profiles/[id]">) {
-  const { id } = await props.params;
+export default async function LiveMatchesPage(props: PageProps<"/profiles/[id]">) {
   const { sweep } = await props.searchParams;
-  if (!/^\d+$/.test(id)) notFound();
   // ?sweep=<id> follows a sweep that is already running (e.g. a second screen during the demo).
   const follow = typeof sweep === "string" && /^[0-9a-f-]{36}$/i.test(sweep) ? sweep : undefined;
-  return <Dashboard profileId={Number(id)} followSweepId={follow} />;
+  return (
+    <>
+      {follow && <FollowSweep sweepId={follow} />}
+      <LiveMatches />
+    </>
+  );
 }

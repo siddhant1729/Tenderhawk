@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { useState } from "react";
+import { api } from "@/lib/api";
 import { compactExcerpt, deadline, inr, istDate, provenanceLine, safeHref } from "@/lib/format";
 import type { AlertResult, MatchDetail, Reason } from "@/lib/types";
-import ErrorBox from "./ErrorBox";
 import VerdictChip from "./VerdictChip";
 
 const KIND: Record<Reason["kind"], { icon: string; label: string; cls: string }> = {
@@ -41,7 +40,7 @@ function ReasonCard({ r }: { r: Reason }) {
           {link && <> · <a href={link} target="_blank" rel="noopener noreferrer" className="underline">notice ↗</a></>}</span>
       </p>
       {r.excerpt ? (
-        <blockquote className="rounded-lg bg-white/80 p-3 text-sm leading-relaxed text-ink-soft">
+        <blockquote className="rounded-lg border border-amber-200/80 bg-yellow-50 p-3 text-sm leading-relaxed text-slate-500">
           {(() => {
             const { before, clause, after } = compactExcerpt(r.excerpt);
             return <>{before}<mark className="font-semibold text-ink">{clause}</mark>{after}</>;
@@ -49,7 +48,7 @@ function ReasonCard({ r }: { r: Reason }) {
           <span className="mt-1 block text-xs">From the bid document</span>
         </blockquote>
       ) : r.source_clause ? (
-        <blockquote className="rounded-lg bg-white/80 p-3 text-sm italic text-ink-soft">“{r.source_clause}”</blockquote>
+        <blockquote className="rounded-lg bg-white/80 p-3 text-sm italic text-slate-500">“{r.source_clause}”</blockquote>
       ) : null}
     </li>
   );
@@ -61,9 +60,9 @@ function AlertBox({ matchId, alertedAt, onSent }: { matchId: number; alertedAt: 
   const [err, setErr] = useState<string | null>(null);
   const label = (s: string) => (s === "sent" ? "Sent" : s === "not_configured" ? "Not configured" : s.replace(/^failed: /, "Failed: "));
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-4">
+    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-bold">Alert</h2>
+        <h2 className="font-bold text-slate-900">Alert</h2>
         <button disabled={busy} onClick={async () => {
           setBusy(true); setErr(null);
           try {
@@ -72,7 +71,7 @@ function AlertBox({ matchId, alertedAt, onSent }: { matchId: number; alertedAt: 
             if (r.sent) onSent();
           } catch (e) { setErr(e instanceof Error ? e.message : "Alert failed."); }
           setBusy(false);
-        }} className="rounded-lg bg-ok px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+        }} className="rounded-lg bg-[#00a884] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
           {busy ? "Sending…" : "Send WhatsApp / email alert"}
         </button>
       </div>
@@ -88,22 +87,8 @@ function AlertBox({ matchId, alertedAt, onSent }: { matchId: number; alertedAt: 
   );
 }
 
-export default function MatchView({ matchId }: { matchId: number }) {
-  const [m, setM] = useState<MatchDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export default function MatchView({ m, reload }: { m: MatchDetail; reload: () => void }) {
   const [done, setDone] = useState<Set<number>>(new Set());
-
-  const load = useCallback(() => {
-    api.match(matchId).then(
-      (d) => { setM(d); setError(null); },
-      (e) => setError(e instanceof ApiError && e.status === 404 ? `There is no match ${matchId}.`
-        : e instanceof Error ? e.message : "Couldn’t load this match."),
-    );
-  }, [matchId]);
-  useEffect(load, [load]);
-
-  if (error) return <ErrorBox message={error} onRetry={load} />;
-  if (!m) return <p className="text-ink-soft">Loading…</p>;
   const t = m.tender;
   const d = deadline(t.end_date);
   const source = safeHref(t.source_url);
@@ -113,39 +98,39 @@ export default function MatchView({ matchId }: { matchId: number }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={`/profiles/${m.profile_id}`} className="text-sm underline">← Back to matches</Link>
+      <Link href={`/profiles/${m.profile_id}`} className="self-start text-sm font-semibold text-slate-600 underline">← Live matches</Link>
 
-      <section className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-5">
+      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <VerdictChip verdict={m.verdict} reasons={m.reasons} large />
-          <span className="rounded bg-paper-2 px-2 py-0.5 text-xs font-semibold uppercase">{t.portal}</span>
-          <span className="font-mono text-sm text-ink-soft">{t.bid_no}</span>
+          <span className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-semibold uppercase text-slate-700">{t.portal}</span>
+          <span className="font-mono text-sm text-slate-500">{t.bid_no}</span>
         </div>
-        <h1 className="text-2xl font-bold break-words">{t.title}</h1>
+        <h1 className="break-words text-2xl font-bold text-slate-900 sm:text-3xl">{t.title}</h1>
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
-          <div><dt className="text-ink-soft">Buyer</dt><dd className="font-semibold">{t.buyer || "—"}</dd></div>
-          <div><dt className="text-ink-soft">Estimated value</dt><dd className="font-semibold">{inr(t.est_value)}</dd></div>
-          <div><dt className="text-ink-soft">Closes</dt>
+          <div><dt className="text-slate-500">Buyer</dt><dd className="font-semibold">{t.buyer || "—"}</dd></div>
+          <div><dt className="text-slate-500">Estimated value</dt><dd className="font-semibold">{inr(t.est_value)}</dd></div>
+          <div><dt className="text-slate-500">Closes</dt>
             <dd className={`font-semibold ${d.closed ? "text-bad" : d.urgent ? "text-warn" : ""}`}>{istDate(t.end_date)} ({d.text})</dd></div>
-          <div><dt className="text-ink-soft">Quantity</dt><dd className="font-semibold">{t.quantity || "—"}</dd></div>
+          <div><dt className="text-slate-500">Quantity</dt><dd className="font-semibold">{t.quantity || "—"}</dd></div>
         </dl>
         <div className="flex flex-wrap gap-2">
-          {source && <a href={source} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper">Open on portal ↗</a>}
-          {doc && doc !== source && <a href={doc} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-ink/30 px-3 py-1.5 text-sm font-semibold">Bid document ↗</a>}
+          {source && <a href={source} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-navy px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800">Open on portal ↗</a>}
+          {doc && doc !== source && <a href={doc} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">Bid document ↗</a>}
         </div>
-        {m.provenance && <p className="text-xs text-ink-soft">{provenanceLine(m.provenance)}</p>}
+        {m.provenance && <p className="text-xs text-slate-500">{provenanceLine(m.provenance)}</p>}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold">Why this verdict</h2>
+          <h2 className="text-lg font-bold text-slate-900">Why this verdict</h2>
           <ul className="flex flex-col gap-3">{reasons.map((r, i) => <ReasonCard key={i} r={r} />)}</ul>
         </section>
 
         <aside className="flex flex-col gap-4">
-          <AlertBox matchId={m.id} alertedAt={m.alerted_at} onSent={load} />
-          <div className="flex flex-col gap-2 rounded-2xl border border-line bg-card p-4">
-            <h2 className="font-bold">Document checklist</h2>
+          <AlertBox matchId={m.id} alertedAt={m.alerted_at} onSent={reload} />
+          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="font-bold text-slate-900">Document checklist</h2>
             {m.missing_docs.length ? (
               <ul className="flex flex-col gap-1.5">
                 {m.missing_docs.map((doc, i) => (
@@ -153,16 +138,16 @@ export default function MatchView({ matchId }: { matchId: number }) {
                     <label className="flex items-start gap-2 text-sm">
                       <input type="checkbox" className="mt-0.5" checked={done.has(i)}
                              onChange={() => { const n = new Set(done); if (n.has(i)) n.delete(i); else n.add(i); setDone(n); }} />
-                      <span className={done.has(i) ? "text-ink-soft line-through" : ""}>{doc}</span>
+                      <span className={done.has(i) ? "text-slate-500 line-through" : ""}>{doc}</span>
                     </label>
                   </li>
                 ))}
               </ul>
-            ) : <p className="text-sm text-ink-soft">Nothing extra listed.</p>}
+            ) : <p className="text-sm text-slate-500">Nothing extra listed.</p>}
           </div>
           {m.corrigenda.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-2xl border border-line bg-card p-4">
-              <h2 className="font-bold">Corrigenda</h2>
+            <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="font-bold text-slate-900">Corrigenda</h2>
               <ul className="flex flex-col gap-2 text-sm">
                 {m.corrigenda.map((c, i) => {
                   const href = safeHref(c.source_url);
@@ -175,17 +160,17 @@ export default function MatchView({ matchId }: { matchId: number }) {
       </div>
 
       {m.eligibility && (
-        <details className="rounded-2xl border border-line bg-card p-4">
+        <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <summary className="cursor-pointer font-bold">Eligibility read from the bid document</summary>
           <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[32rem] text-left text-sm">
-            <thead><tr className="text-ink-soft"><th className="py-1 pr-4">Criterion</th><th className="py-1 pr-4">Value</th><th className="py-1">Source clause</th></tr></thead>
+            <thead><tr className="text-slate-500"><th className="py-1 pr-4">Criterion</th><th className="py-1 pr-4">Value</th><th className="py-1">Source clause</th></tr></thead>
             <tbody>
               {Object.entries(m.eligibility).map(([k, c]) => (
-                <tr key={k} className="border-t border-line align-top">
+                <tr key={k} className="border-t border-slate-200 align-top">
                   <td className="py-2 pr-4 font-semibold">{CRITERIA[k] || k}</td>
                   <td className="py-2 pr-4">{showValue(k, c?.value)}</td>
-                  <td className="py-2 italic text-ink-soft">{c?.source_clause ? `“${c.source_clause}”` : "—"}</td>
+                  <td className="py-2 italic text-slate-500">{c?.source_clause ? `“${c.source_clause}”` : "—"}</td>
                 </tr>
               ))}
             </tbody>
