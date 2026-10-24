@@ -121,7 +121,7 @@ The two `*_relaxation_*` flags come straight from GeM bid documents: when MSE re
 | `GET` | `/sweeps/{id}/events` | SSE stream of §3.3 events |
 | `GET` | `/profiles/{id}/matches` | list: tender summary + verdict + fit_score, sorted |
 | `GET` | `/matches/{id}` | tender, eligibility (§3.4), verdict, reasons, missing_docs, corrigenda |
-| `POST` | `/matches/{id}/alert` | sends WhatsApp/email now (demo button) |
+| `POST` | `/matches/{id}/alert` | sends WhatsApp/email now (demo button) → `{sent, channels: {whatsapp, email}, preview}`; a channel without credentials reports `not_configured` |
 | `GET` | `/health` | `{db, redis, fallback_mode, next_corrigenda_check}` |
 | `POST` | `/profiles/{id}/match` | re-run the matcher on stored tenders without sweeping → verdict counts |
 | `POST` | `/corrigenda/check` | run the daily corrigenda job now (Search API, no credits) → `{checked, new, extended}` |
@@ -175,7 +175,10 @@ TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 ALERT_WHATSAPP_TO=
-SMTP_URL=
+SMTP_URL=                    # smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465
+ALERT_EMAIL_FROM=            # defaults to the SMTP user
+ALERT_EMAIL_TO=              # overrides the profile's email (demo inbox)
+AUTO_ALERT=true              # after each sweep, alert new relevant ELIGIBLE matches (max 5 per sweep)
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 **Never commit `.env`.** Share secrets over DM, not in the repo or in chat logs.
@@ -268,7 +271,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-`agents/` and `api/` are merged to `main` (42 tests pass on the combined code). `POST /matches/{id}/alert` (§3.5) is the only listed endpoint not built yet.
+`agents/` and `api/` are merged to `main` (42 tests pass on the combined code). All §3.5 endpoints exist.
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
@@ -286,7 +289,7 @@ Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 | H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
 | H10–16 | Matches list UI | Aditya | ⬜ | |
 | H10–16 | Fixtures GeM/CPPP/Haryana × "steel racks" + doc texts + parses | Vandan | ⬜ | blocks the wifi-off demo |
-| H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan | ⬜ | |
+| H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan (built by Harsh) | 🟡 | `delivery/alerts.py`: Twilio REST + SMTP, endpoint, auto-alert after sweeps; tested with stubs. Needs `TWILIO_*` + stage phone joined to the sandbox to send for real |
 | H16–21 | Match detail page with highlighted clause | Aditya | ⬜ | API ready: `GET /matches/{id}` returns `reasons[].excerpt` with highlight offsets |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | 🟡 | backend side done; UI side pending |
 | H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | `README.md` drafted; update its status list (backend now done) at freeze. Dry runs and tag pending |
@@ -299,5 +302,5 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 42 tests, no keys needed
+python -m pytest -q tests         # 52 tests, no keys needed
 ```

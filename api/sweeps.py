@@ -20,6 +20,7 @@ from api.eligibility import parse_eligibility
 from api.events import publish
 from api.matching import rematch
 from api.models import Profile
+from delivery.alerts import auto_alert
 from api.tenders import (save_doc_text, save_eligibility, tenders_missing_eligibility, tenders_missing_text,
                          upsert_tenders)
 
@@ -139,6 +140,18 @@ async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
     return sum(await asyncio.gather(*(one(*row) for row in todo)))
 
 
+async def _auto_alert(sweep_id: str, profile_id: int) -> int:
+    try:
+        sent = await auto_alert(profile_id)
+    except Exception:
+        log.exception("auto-alert failed")
+        return 0
+    if sent:
+        publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
+                          message=f"Sent {sent} WhatsApp/email alert{'s' if sent != 1 else ''} for new eligible tenders"))
+    return sent
+
+
 async def run_sweep(sweep_id: str, profile_id: int) -> None:
     """Background task for POST /sweeps. Never raises; always ends with exactly one all/done event."""
     summary = "Sweep failed"
@@ -172,12 +185,14 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
                           message="Matching tenders against your profile"))
         m = await rematch(profile_id)
         c = m["counts"]
+        alerts = await _auto_alert(sweep_id, profile_id)
         low = m["total"] - m["relevant"]
         summary = (f"{len(all_ids)} tenders found ({len(new_ids)} new), {read} documents read, {parsed} parsed. "
                    f"{c.get('ELIGIBLE', 0)} eligible, {c.get('CHECK_DOCS', 0)} check docs, "
                    f"{c.get('NOT_ELIGIBLE', 0)} not eligible"
                    + (f", {low} low-relevance hidden" if low else "")
-                   + (f". {corr['new']} new corrigenda" if corr.get("new") else ""))
+                   + (f". {corr['new']} new corrigenda" if corr.get("new") else "")
+                   + (f". {alerts} alert{'s' if alerts != 1 else ''} sent" if alerts else ""))
     except Exception as e:
         log.exception("sweep %s failed", sweep_id)
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="error", message=f"Sweep failed: {e}"))

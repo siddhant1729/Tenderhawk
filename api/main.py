@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from api.config import REDIS_URL, fallback_mode
 from api import events, scheduler
+from delivery.alerts import alert_match
 from api.db import engine, get_db
 from api.documents import excerpt
 from api.matcher import VERDICT_RANK
@@ -122,6 +123,16 @@ def run_match(profile_id: int, db: Session = Depends(get_db)):
 async def corrigenda_check_now():
     """Run the daily corrigenda job now (demo button / ops). TinyFish Search costs no credits."""
     return await scheduler.daily_corrigenda()
+
+
+@app.post("/matches/{match_id}/alert")
+async def send_alert(match_id: int):
+    """Send this match by WhatsApp/email now (demo button). Unconfigured channels report "not_configured";
+    the message preview is always returned."""
+    res = await alert_match(match_id)
+    if res is None:
+        raise HTTPException(404, "match not found")
+    return res
 
 
 @app.get("/demo", include_in_schema=False)
