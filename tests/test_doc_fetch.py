@@ -139,3 +139,33 @@ def test_guessed_gem_document_urls_are_dropped():
            "doc_url": "https://bidplus.gem.gov.in/showbiddata/GEM/2026/B/8186409"}
     (b,) = client.to_listings("gem", [raw])
     assert b.doc_url is None and b.source_url == client.PORTALS["gem"]["url"]
+
+
+@pytest.mark.parametrize("text,bid", [
+    # Real search results for recorded bids (2026-10-25): none of them is a corrigendum for that bid.
+    ("eProcurement System Government of India Search | Active Tenders | Tenders by Closing Date | Corrigendum | "
+     "Bid Awards | CPPP Home ... [ BARCF/INR-PRJ/ME/TR/41/2026 ][2026_BARC_928841_1], Bhabha Atomic", "BARCF/INR-PRJ/ME/TR/41/2026"),
+    ("CPPP Tenders Title/Ref.No./Tender Id · Organisation Name · Corrigendum ... 07-October-2026 06:00:00 PM, "
+     "SHEET ROOFING OVER THE TERRACE AREA/ SAI/RC-TVM/INFRA/2026-27 /", "SAI/RC-TVM/INFRA/2026-27"),
+    ("2 days ago — GEM/2026/B/8151881 . Tender Agency. all india institute of medical ... 8. corrigendum tender "
+     "for gas chromatograph · 9. corrigendum tender for", "GEM/2026/B/8151881"),
+    ("Bid Number: GEM/2026/B/8171651 . Dated: 22 ... Bid document, ATC and Corrigendum if any. 10. Certificates.",
+     "GEM/2026/B/8171651"),
+])
+def test_corrigendum_word_alone_is_not_a_notice(text, bid):
+    assert not client.is_corrigendum_notice(text, bid)
+
+
+@pytest.mark.parametrize("text", [
+    "Corrigendum 1 for GEM/2026/B/8171651: bid end date extended to 20-11-2026",
+    "GEM/2026/B/8171651 - Bid End Date has been extended till 20-11-2026 03:00 PM",
+    "Tender GEM/2026/B/8171651: extension of bid due date",
+    "Amendment No. 2 issued for GEM/2026/B/8171651",
+])
+def test_real_notices_are_found(text):
+    assert client.is_corrigendum_notice(text, "GEM/2026/B/8171651")
+
+
+def test_notice_about_another_bid_on_the_same_page_is_ignored():
+    text = "GEM/2026/B/8171651 Steel almirah. " + "x" * 400 + " Corrigendum 1 for GEM/2026/B/9999999"
+    assert not client.is_corrigendum_notice(text, "GEM/2026/B/8171651")

@@ -240,6 +240,29 @@ async def fetch_doc_text(url: str) -> tuple[str, str]:
     return "", ""
 
 
+# What an actual corrigendum or extension notice says. The bare word is everywhere and proves nothing: portal
+# menus ("Active Tenders | Corrigendum | Bid Awards"), GeM boilerplate ("ATC and Corrigendum if any"), lists of
+# other tenders ("corrigendum tender for gas chromatograph"). Seen as false positives on real bids, 2026-10-25.
+_NOTICE = re.compile(
+    r"corrigendum\s*(?:no\.?|number|#)?\s*[-:]?\s*\d"
+    r"|corrigendum\s+(?:issued|published|dated|regarding)"
+    r"|(?:bid|tender|due|closing|submission|end|opening)\s+date\s+(?:has\s+been\s+|is\s+|was\s+)?(?:extended|revised|changed)"
+    r"|extended\s+(?:to|till|until|up\s*to)\s+\d"
+    r"|extension\s+of\s+(?:the\s+)?(?:bid|tender|due|closing|last|submission|end)(?:\s+\w+)?\s+date"
+    r"|(?:addendum|amendment)\s*(?:no\.?)?\s*[-:]?\s*\d",
+    re.I)
+_NEAR = 250  # characters: the notice must be about this bid, not another one on the same page
+
+
+def is_corrigendum_notice(text: str, bid_no: str) -> bool:
+    low, key = text.lower(), bid_no.lower()
+    for i in (m.start() for m in re.finditer(re.escape(key), low)):
+        window = text[max(0, i - _NEAR): i + len(key) + _NEAR]
+        if _NOTICE.search(window):
+            return True
+    return False
+
+
 async def search_corrigenda(bid: BidListing) -> list[Corrigendum]:
     """Look for corrigenda / deadline extensions for a bid via TinyFish Search."""
     if fallback_mode():
@@ -254,6 +277,6 @@ async def search_corrigenda(bid: BidListing) -> list[Corrigendum]:
     out = []
     for r in resp.results:
         text = f"{r.title} {r.snippet}"
-        if bid.bid_no.lower() in text.lower() and re.search(r"corrigend|extend|extension|amend", text, re.I):
+        if is_corrigendum_notice(text, bid.bid_no):
             out.append(Corrigendum(bid_no=bid.bid_no, summary=r.snippet or r.title, source_url=r.url))
     return out
