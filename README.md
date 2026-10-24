@@ -77,7 +77,7 @@ flowchart LR
 | TinyFish API | Used for | When |
 |---|---|---|
 | **Agent** | Opens a portal, searches, paginates, extracts bids (streamed step by step to the UI) | Listing sweeps only, never per user |
-| **Fetch** | Renders a bid page or document to clean text for the LLM | Once per new bid |
+| **Fetch** | Renders a bid page or document to clean text for the LLM (GeM PDFs currently fail with `proxy_error`; saved PDFs are attached instead) | Once per new bid |
 | **Search** | Finds corrigenda, deadline extensions, buyer context | Daily per active bid |
 
 ## Status
@@ -86,10 +86,11 @@ This is a 24-hour hackathon build. What exists right now:
 
 - [x] **Agents layer** (`agents/`): TinyFish wrapper, schemas, goals for GeM / CPPP / Haryana, CLI, fixture recorder, offline replay
 - [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, Claude eligibility parser, matcher with embeddings and clause excerpts, daily corrigenda job — 42 tests
-- [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis, Ramesh seed profile
-- [ ] Demo-ready fixtures: the first GeM recording exists but needs a re-record with relevant bids and bid-document text
-- [ ] Next.js dashboard with live agents panel (`web/`)
-- [ ] WhatsApp / email alerts (`POST /matches/{id}/alert`)
+- [x] **Dashboard** (`web/`): Next.js 16 — profile form, live agents panel (4 cards over SSE), matches with verdict chips, match detail with the source clause highlighted in the bid text, alert button
+- [x] **Alerts** (`delivery/alerts.py`): WhatsApp via the Twilio sandbox and email via SMTP; `POST /matches/{id}/alert`; new eligible matches are alerted after each sweep
+- [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
+- [ ] **Demo-ready fixtures**: the first GeM recording holds unrelated, closed bids. Re-record "storage rack" and attach bid documents (see below); needs `TINYFISH_API_KEY` and `ANTHROPIC_API_KEY`
+- [ ] **Live document text for GeM**: TinyFish Fetch gets `proxy_error` on GeM bid PDFs, so live sweeps have no document text yet (saved PDFs work)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
 
@@ -118,10 +119,20 @@ uvicorn api.main:app --reload     # http://localhost:8000
 curl localhost:8000/health
 curl -X POST localhost:8000/sweeps -H 'content-type: application/json' -d '{"profile_id": <id>}'
 curl -N localhost:8000/sweeps/<sweep_id>/events      # live agent steps (SSE)
-curl localhost:8000/profiles/<id>/matches            # verdicts, best fit first
+curl localhost:8000/profiles/<id>/matches            # relevant first, then verdict, then fit
 ```
 
 Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no network and no credits.
+
+### Run the dashboard
+
+```bash
+cd web && npm install && npm run dev      # http://localhost:3000 (talks to NEXT_PUBLIC_API_URL)
+```
+
+Or run everything in Docker: `docker compose --profile app up -d --build` starts Postgres, Redis, the API on :8000
+and the dashboard on :3000 (move a busy host port with e.g. `REDIS_PORT=6380`). A single-page fallback console is
+also served by the API at `/demo`.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -133,11 +144,13 @@ Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no netwo
 | `GET` | `/matches/{id}` | Tender, eligibility with source clauses, reasons, missing docs, corrigenda |
 | `POST` | `/profiles/{id}/match` | Re-run the matcher without sweeping |
 | `POST` | `/corrigenda/check` | Run the corrigenda job now (Search API, no credits) |
+| `POST` | `/matches/{id}/alert` | Send the WhatsApp / email alert now; returns per-channel status and the message preview |
 
 ### Run the tests
 
 ```bash
 python -m pytest -q tests          # no API keys needed
+cd web && npm test                 # dashboard helpers and live-panel state
 ```
 
 ### Drive the agents directly
@@ -163,6 +176,14 @@ python -m agents.cli gem "storage rack"
 python -m agents.cli gem "storage rack" --record
 ```
 
+**Attach bid documents and parses** (TinyFish Fetch can't reach GeM PDFs yet, so save them from a browser,
+named by the number at the end of the bid's document link, e.g. `9988944.pdf`):
+
+```bash
+python -m delivery.build_fixture attach gem "storage rack" --docs ~/Downloads/gem_bids --parse
+python -m delivery.build_fixture check gem "storage rack"      # warns about closed bids, missing docs or parses
+```
+
 **Replay offline**: no network, no credits, same step events:
 
 ```bash
@@ -181,7 +202,10 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
 | `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
 | `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
-| `TWILIO_*`, `ALERT_WHATSAPP_TO`, `SMTP_URL` | Alerts |
+| `TWILIO_*`, `ALERT_WHATSAPP_TO` | WhatsApp alerts (Twilio sandbox; `ALERT_WHATSAPP_TO` = the stage phone) |
+| `SMTP_URL`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Email alerts |
+| `AUTO_ALERT` | Alert new relevant ELIGIBLE matches after each sweep (max 3 per sweep) |
+| `NEXT_PUBLIC_API_URL` | API address for the dashboard (`web/.env.local`) |
 
 See [`.env.example`](.env.example). Never commit `.env`.
 
@@ -190,8 +214,8 @@ See [`.env.example`](.env.example). Never commit `.env`.
 ```
 agents/      TinyFish wrapper, portal goals, schemas, SSE step events
 api/         FastAPI app, models, migrations, eligibility parser, matcher, corrigenda job
-web/         Next.js dashboard: profile form, live agents panel, matches   (in progress)
-delivery/    Seed profile, fixtures; alerts to come
+web/         Next.js dashboard: profile form, live agents panel, matches, match detail
+delivery/    Alerts (WhatsApp, email), seed profile, fixtures and the fixture builder, Docker images
 tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 ```
 

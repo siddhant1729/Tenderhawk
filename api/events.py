@@ -14,7 +14,7 @@ from agents.schemas import StepEvent
 from api.config import REDIS_URL
 
 TTL = 3600
-IDLE_LIMIT = 900  # seconds without a sweep event before the stream gives up (sweep died with the server)
+IDLE_LIMIT = 360  # seconds without an event before the stream gives up; agent runs are capped at 300 s
 _r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 

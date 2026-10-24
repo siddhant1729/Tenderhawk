@@ -2,16 +2,18 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import redis
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from api.config import REDIS_URL, fallback_mode
 from api import events, scheduler
+from delivery.alerts import alert_match
 from api.db import engine, get_db
 from api.documents import excerpt
 from api.matcher import VERDICT_RANK
@@ -103,7 +105,7 @@ def get_match(match_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "match not found")
     t = m.tender
     reasons = [{**r, "excerpt": excerpt(t.doc_text or "", r.get("source_clause") or "")} for r in m.reasons]
-    return MatchDetail(id=m.id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
+    return MatchDetail(id=m.id, profile_id=m.profile_id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
                        missing_docs=m.missing_docs, alerted_at=m.alerted_at, tender=t,
                        eligibility=t.eligibility, corrigenda=t.corrigenda or [])
 
@@ -121,3 +123,19 @@ def run_match(profile_id: int, db: Session = Depends(get_db)):
 async def corrigenda_check_now():
     """Run the daily corrigenda job now (demo button / ops). TinyFish Search costs no credits."""
     return await scheduler.daily_corrigenda()
+
+
+@app.post("/matches/{match_id}/alert")
+async def send_alert(match_id: int):
+    """Send this match by WhatsApp/email now (demo button). Unconfigured channels report "not_configured";
+    the message preview is always returned."""
+    res = await alert_match(match_id)
+    if res is None:
+        raise HTTPException(404, "match not found")
+    return res
+
+
+@app.get("/demo", include_in_schema=False)
+def demo_page():
+    """Single-page demo console (stopgap until the Next.js dashboard in web/)."""
+    return FileResponse(Path(__file__).parent / "static" / "demo.html", media_type="text/html")

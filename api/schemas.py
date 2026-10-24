@@ -61,6 +61,7 @@ class Reason(BaseModel):
 class MatchSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    profile_id: int
     verdict: str
     fit_score: float | None
     relevant: bool
