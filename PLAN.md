@@ -90,11 +90,16 @@ async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Se
   "past_experience_years": {"value": 3,       "source_clause": "..."},
   "emd_amount":            {"value": 37000,   "source_clause": "..."},
   "emd_exemption_for_mse": {"value": true,    "source_clause": "..."},
+  "mse_relaxation_experience_turnover":     {"value": false, "source_clause": "MSE Relaxation for Years of Experience and Turnover No"},
+  "startup_relaxation_experience_turnover": {"value": false, "source_clause": "..."},
   "required_certifications": {"value": ["ISO 9001"], "source_clause": "..."},
+  "documents_required":    {"value": ["Experience Criteria", "Bidder Turnover"], "source_clause": "..."},
   "states":                {"value": [],      "source_clause": null}
 }
 ```
-A criterion the document doesn't mention is stored as `{"value": null, "source_clause": null}`.
+A criterion the document doesn't mention is stored as `{"value": null, "source_clause": null}` (list criteria: `{"value": [], "source_clause": null}`).
+The two `*_relaxation_*` flags come straight from GeM bid documents: when MSE relaxation is `true`, an MSE is exempt from the turnover and experience criteria. `documents_required` feeds the document checklist.
+`tenders.eligibility` stays `null` when the document couldn't be read or parsed; the matcher treats that as CHECK_DOCS.
 
 ### 3.5 REST API: FastAPI (`api/`)
 | Method | Path | Body / returns |
