@@ -18,9 +18,13 @@ log = logging.getLogger("api.clock")
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "delivery" / "fixtures"
 
 
-def parse_demo_now(value: str) -> datetime:
-    dt = datetime.fromisoformat(value.strip())
+def as_ist(dt: datetime) -> datetime:
+    """Any datetime -> IST-aware. Naive means IST (portal times are IST), never the server's local zone."""
     return dt.replace(tzinfo=IST) if dt.tzinfo is None else dt.astimezone(IST)
+
+
+def parse_demo_now(value: str) -> datetime:
+    return as_ist(datetime.fromisoformat(value.strip()))
 
 
 def _newest_recording() -> datetime | None:

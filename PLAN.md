@@ -285,6 +285,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 0 (`fix/demo-hardening`): web `npm install` + `npm test` (14 ✅) + `npm run build` ✅; one alembic head. Docker not running (Docker Desktop's `docker-desktop` WSL distro stopped), so DB steps and the 2 Postgres alert tests wait for it.
 - Phase 1 (C1): GeM doc text via Fetch → direct PDF download in `agents/` (verified live, `source=direct`); agent route tried once and can't read PDFs; `AGENT_LIMITS` no longer sends the rejected `max_steps`; `tenders.doc_source` / `eligibility_source` + `/matches/{id}` provenance.
 - Phase 2: one clock (`api/clock.py` `now_ist()`) for matcher, corrigenda, auto-alert, fixture check; web and `/demo` countdowns sync from `/health.now`. Fallback freezes at `DEMO_NOW`, else the newest fixture's `recorded_at` (no date rewriting). Tests: closes-in-3-days stays open, deadline-passed is NOT_ELIGIBLE.
+- Phase 3: timezone audit. Storage was already tz-aware (`timestamptz`); added `as_ist()` so a naive datetime means IST, never the server's zone (matcher no longer crashes on one; alert "closes" text and corrigenda time-of-day no longer depend on `TZ`); `/demo` dates pinned to Asia/Kolkata. Tests: GeM "24-10-2026 2:00 PM IST" → 14:00 IST; a 15:00 IST deadline is open at 14:59 and passed at 15:01 with the server in UTC / Los Angeles / Kolkata.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |

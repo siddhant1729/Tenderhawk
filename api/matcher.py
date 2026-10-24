@@ -10,8 +10,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from agents.schemas import IST
-from api.clock import now_ist
+from api.clock import as_ist, now_ist
 
 ELIGIBLE, CHECK_DOCS, NOT_ELIGIBLE = "ELIGIBLE", "CHECK_DOCS", "NOT_ELIGIBLE"
 VERDICT_RANK = {ELIGIBLE: 0, CHECK_DOCS: 1, NOT_ELIGIBLE: 2}
@@ -66,7 +65,8 @@ def _crit(el: dict, key: str) -> tuple:
 
 def evaluate(p: ProfileFacts, end_date: datetime, eligibility: dict | None, now: datetime | None = None,
              corrigenda: list[dict] | None = None) -> Result:
-    now = now or now_ist()
+    now = as_ist(now or now_ist())
+    end_date = as_ist(end_date)
     reasons: list[dict] = []
     docs: list[str] = []
 
@@ -75,11 +75,11 @@ def evaluate(p: ProfileFacts, end_date: datetime, eligibility: dict | None, now:
                         "source_url": url})
 
     if end_date < now:
-        add(FAIL, "deadline", f"Deadline passed (closed {end_date.astimezone(IST):%d %b, %I:%M %p})")
+        add(FAIL, "deadline", f"Deadline passed (closed {end_date:%d %b, %I:%M %p})")
 
     for c in corrigenda or []:
         ext = c.get("extends_to")
-        text = (f"Deadline extended to {datetime.fromisoformat(ext).astimezone(IST):%d %b}" if ext
+        text = (f"Deadline extended to {as_ist(datetime.fromisoformat(ext)):%d %b}" if ext
                 else "Corrigendum posted")
         add(INFO, "corrigendum", text, c.get("summary"), c.get("source_url"))
 

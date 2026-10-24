@@ -136,7 +136,7 @@ function inr(v) {
 let clockOffset = 0;  // API clock (frozen demo clock in fallback mode) minus browser clock, from /health
 function deadline(iso) {
   const end = new Date(iso), ms = end - (Date.now() + clockOffset);
-  const date = end.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  const date = end.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
   if (ms <= 0) return "closed " + date;
   const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4);
   return "closes in " + (d ? d + "d " + h + "h" : h ? h + "h " + m + "m" : m + "m") + " · " + date;

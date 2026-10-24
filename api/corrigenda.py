@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from agents.client import search_corrigenda
 from agents.schemas import IST, BidListing, Corrigendum, StepEvent, parse_portal_date
-from api.clock import now_ist
+from api.clock import as_ist, now_ist
 from api.db import SessionLocal
 from api.models import Tender
 
@@ -33,7 +33,7 @@ def extension_date(c: Corrigendum, current_end: datetime) -> datetime | None:
         return c.new_end_date if c.new_end_date > current_end else None
     if not _EXTENDED.search(c.summary):
         return None
-    local_end = current_end.astimezone(IST)  # the DB hands back UTC; keep the IST time of day
+    local_end = as_ist(current_end)  # the DB hands back UTC; keep the IST time of day
     found = []
     for d, m, y in _DATE.findall(c.summary):
         m = m[:3].title() if m.isalpha() else m

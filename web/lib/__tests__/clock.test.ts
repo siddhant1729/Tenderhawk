@@ -17,3 +17,11 @@ describe("server clock", () => {
     expect(Math.abs(now().getTime() - Date.now())).toBeLessThan(1000);
   });
 });
+
+describe("IST display", () => {
+  it("shows portal times in IST whatever the browser's zone", async () => {
+    const { istDate } = await import("../format");
+    expect(istDate("2026-10-24T09:30:00Z").toLowerCase()).toContain("3:00");
+    expect(istDate("2026-10-24T09:30:00Z")).toContain("24");
+  });
+});
