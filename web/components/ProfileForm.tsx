@@ -14,7 +14,7 @@ const RAMESH = {
   phone: "+919800000000",
   email: "ramesh@example.com",
   products: "steel storage racks, slotted angle racks, steel almirah, fabricated steel structures, industrial shelving",
-  keywords: "steel rack, steel almirah, fabricated structure",
+  keywords: "storage rack, steel rack, steel almirah",
   hsn: "9403, 7308, 7326",
   turnover: "1.2 Cr",
   years: "8",
