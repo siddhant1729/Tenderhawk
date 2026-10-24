@@ -30,7 +30,9 @@ PORTALS = {
             "or title attribute, or open the bid details, and never return a value ending in '...'), "
             "item (the main product name), buyer (ministry and department), quantity, "
             "end_date (the 'End Date' value with time), "
-            "doc_url (absolute link of the bid number, which opens the bid document). "
+            "doc_url (copy the exact href of the bid-number link, which opens the bid document and looks like "
+            "https://bidplus.gem.gov.in/showbidDocument/1234567; never build or guess a URL, use an empty string "
+            "if you can't read the href). "
             "Look through up to 3 result pages to find matching bids. " + _COMMON
         ),
     },

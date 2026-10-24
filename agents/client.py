@@ -35,6 +35,8 @@ INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
 # Hard cap so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
 # Time only: a custom max_steps is rejected (HTTP 403 "not enabled for custom max steps", beta-only).
 AGENT_LIMITS = AgentConfig(max_duration_seconds=300)
+# TinyFish treats that as a soft limit (a Haryana run went 352 s), so we also stop waiting ourselves.
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "330"))
 
 # Direct downloads: only bid documents on the portals we sweep, only over HTTPS, only PDFs of sane size.
 DOC_HOSTS = {urlparse(p["url"]).hostname for p in PORTALS.values()}
@@ -59,6 +61,18 @@ def fixture_path(portal: str, category: str) -> Path:
     return FIXTURES_DIR / f"{portal}_{slug}.json"
 
 
+# GeM bid documents live at /showbidDocument/<digits>. Anything else the agent returns is a guess (seen:
+# /showbiddata/GEM/2026/B/... -> 404) and would be a dead "Bid document" link on stage.
+_GEM_DOC = re.compile(r"^https://bidplus\.gem\.gov\.in/showbidDocument/\d+$")
+
+
+def session_bound(url: str) -> bool:
+    """NIC GePNIC portals (CPPP, Haryana) link tenders through per-session URLs that expire in minutes
+    ("Stale Session"): useless as a document to read and as an "Open on portal" link."""
+    q = urlparse(url).query
+    return "session=T" in q or "%24DirectLink" in q or "$DirectLink" in q
+
+
 def to_listings(portal: str, raw_bids: list[dict]) -> list[BidListing]:
     """Validate raw agent rows. A bad row is logged and skipped, never fails the sweep."""
     base = PORTALS[portal]["url"]
@@ -68,6 +82,9 @@ def to_listings(portal: str, raw_bids: list[dict]) -> list[BidListing]:
         row = {k: v for k, v in row.items() if v not in ("", None)}
         if row.get("doc_url"):
             row["doc_url"] = urljoin(base, row["doc_url"])
+            if session_bound(row["doc_url"]) or (portal == "gem" and not _GEM_DOC.match(row["doc_url"])):
+                log.info("dropping unusable %s doc_url for %s: %s", portal, row.get("bid_no"), row["doc_url"])
+                row.pop("doc_url")  # the stable bid list (base) is where the bid number can be found
         row.setdefault("source_url", row.get("doc_url") or base)
         try:
             bid = BidListing(portal=portal, **row)
@@ -88,25 +105,36 @@ async def run_agent(portal: str, category: str, on_step: Callable[[int, str], No
     for attempt in (1, 2):
         steps: list[dict] = []
         run_id, result = None, None
-        async with _tf().agent.stream(
-            url=url, goal=goal, output_schema=AGENT_OUTPUT_SCHEMA, proxy_config=INDIA_PROXY,
-            agent_config=AGENT_LIMITS,
-        ) as stream:
-            async for ev in stream:
-                if isinstance(ev, StartedEvent):
-                    run_id = ev.run_id
-                elif isinstance(ev, ProgressEvent):
-                    steps.append({"step": len(steps) + 1, "message": ev.purpose})
-                    on_step(len(steps), ev.purpose)
-                elif isinstance(ev, CompleteEvent):
-                    if ev.status == "COMPLETED" and isinstance(ev.result_json, dict):
-                        result = ev.result_json
-                    else:
-                        last_error = ev.error.message if ev.error else f"run {ev.status}"
+        try:
+            async with asyncio.timeout(AGENT_TIMEOUT):
+                async with _tf().agent.stream(
+                    url=url, goal=goal, output_schema=AGENT_OUTPUT_SCHEMA, proxy_config=INDIA_PROXY,
+                    agent_config=AGENT_LIMITS,
+                ) as stream:
+                    async for ev in stream:
+                        if isinstance(ev, StartedEvent):
+                            run_id = ev.run_id
+                        elif isinstance(ev, ProgressEvent):
+                            steps.append({"step": len(steps) + 1, "message": ev.purpose})
+                            on_step(len(steps), ev.purpose)
+                        elif isinstance(ev, CompleteEvent):
+                            if ev.status == "COMPLETED" and isinstance(ev.result_json, dict):
+                                result = ev.result_json
+                            else:
+                                last_error = ev.error.message if ev.error else f"run {ev.status}"
+        except TimeoutError:
+            # No retry: a second run would take as long. The card shows the portal link instead.
+            raise RuntimeError(f"Agent still running after {AGENT_TIMEOUT} s ({len(steps)} steps); stopped waiting")
         if result is not None and (result.get("blocked") or isinstance(result.get("bids"), list)):
             return {"run_id": run_id, "url": url, "goal": goal, "steps": steps, "result": result}
         log.warning("%s run %s unusable (attempt %d): %s", portal, run_id, attempt, last_error)
     raise RuntimeError(f"{portal} agent failed: {last_error}")
+
+
+def _short_reason(reason: str | None) -> str:
+    """Agents explain a block at length; the card needs the first sentence."""
+    first = re.split(r"(?<=[.!?])\s", (reason or "captcha").strip(), maxsplit=1)[0].rstrip(".")
+    return first if len(first) <= 140 else first[:137] + "…"
 
 
 async def _replay(portal: str, category: str, emit: Emit, sweep_id: str) -> list[BidListing]:
@@ -120,6 +148,11 @@ async def _replay(portal: str, category: str, emit: Emit, sweep_id: str) -> list
     for s in fx["steps"]:
         await asyncio.sleep(random.uniform(0.3, 0.8))
         emit(StepEvent(sweep_id=sweep_id, agent=portal, type="step", step=s["step"], message=s["message"]))
+    if fx.get("blocked"):  # the recorded run hit a captcha: replay exactly that, with the portal link
+        emit(StepEvent(sweep_id=sweep_id, agent=portal, type="error", step=len(fx["steps"]),
+                       message=f"Blocked: {_short_reason(fx.get('blocked_reason'))}. Open on portal.",
+                       direct_url=PORTALS[portal]["url"]))
+        return []
     bids = [BidListing.model_validate(b) for b in fx["result"]]
     emit(StepEvent(sweep_id=sweep_id, agent=portal, type="result", step=len(fx["steps"]),
                    message=f"Found {len(bids)} bids", count=len(bids)))
@@ -147,7 +180,7 @@ async def sweep_portal(portal: str, category: str, emit: Emit, sweep_id: str = "
     result = run["result"]
     if result.get("blocked"):
         emit(StepEvent(sweep_id=sweep_id, agent=portal, type="error", step=len(run["steps"]),
-                       message=f"Blocked: {result.get('blocked_reason') or 'captcha'}. Open on portal.",
+                       message=f"Blocked: {_short_reason(result.get('blocked_reason'))}. Open on portal.",
                        direct_url=url))
         return []
 

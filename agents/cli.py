@@ -22,10 +22,12 @@ def print_event(ev: StepEvent) -> None:
 async def record(portal: str, category: str) -> None:
     run = await run_agent(portal, category, lambda n, m: print(f"[{portal}:step:{n}] {m}", flush=True))
     bids = to_listings(portal, run["result"].get("bids", []))
-    if not bids:
-        r = run["result"]
-        print(f"not saved: 0 bids" + (f" (blocked: {r.get('blocked_reason')})" if r.get("blocked") else " (no relevant bids)"))
+    r = run["result"]
+    if not bids and not r.get("blocked"):
+        print("not saved: 0 bids (no relevant bids)")
         return
+    if r.get("blocked"):  # saved too: replay shows the same captcha card with the portal link
+        print(f"blocked: {r.get('blocked_reason')}")
     docs = {}
     for b in bids:
         if b.doc_url:
@@ -37,6 +39,7 @@ async def record(portal: str, category: str) -> None:
         "portal": portal, "category": category, "url": run["url"], "goal": run["goal"],
         "recorded_at": datetime.now(IST).isoformat(), "run_id": run["run_id"],
         "steps": run["steps"], "raw_result": run["result"],
+        "blocked": bool(r.get("blocked")), "blocked_reason": r.get("blocked_reason"),
         "result": [b.model_dump(mode="json") for b in bids], "docs": docs,
     }
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)

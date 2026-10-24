@@ -60,3 +60,9 @@ def test_check_passes_a_complete_fixture():
 def test_cli_reports_missing_fixture(capsys):
     assert bf.main(["check", "gem", "no such category"]) == 2
     assert "Record one first" in capsys.readouterr().out
+
+
+def test_bid_without_document_link_is_not_a_problem():
+    """CPPP/Haryana give no readable document link: the bid is shown as CHECK_DOCS with the portal link."""
+    no_doc = {**bid(9, 3), "portal": "cppp", "doc_url": None}
+    assert bf.check({"result": [no_doc], "steps": [{"step": 1}]}, NOW) == []

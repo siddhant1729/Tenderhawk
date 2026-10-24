@@ -77,3 +77,65 @@ def test_fallback_mode_reads_fixture_docs_only(monkeypatch):
 def test_agent_limits_never_send_max_steps():
     """The account rejects a custom max_steps with HTTP 403, which would fail every live sweep."""
     assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 300
+
+
+def test_session_bound_portal_links_are_dropped():
+    """CPPP/Haryana DirectLink URLs expire ("Stale Session"): keep the stable list page as the link instead."""
+    raw = {"bid_no": "SAI/RC-TVM/INFRA/2026-27", "title": "Storage racks", "end_date": "09-Nov-2026 06:00 PM",
+           "doc_url": "https://eprocure.gov.in/eprocure/app?component=%24DirectLink&page=FrontEndLatestActiveTenders"
+                      "&service=direct&session=T&sp=S7Pc"}
+    (b,) = client.to_listings("cppp", [raw])
+    assert b.doc_url is None and b.source_url == client.PORTALS["cppp"]["url"]
+    (g,) = client.to_listings("gem", [{**raw, "doc_url": GEM_DOC}])
+    assert g.doc_url == GEM_DOC
+
+
+def test_blocked_fixture_replays_as_error_card_with_portal_link(monkeypatch, tmp_path):
+    import json
+    monkeypatch.setenv("FALLBACK_MODE", "true")
+    monkeypatch.setattr(client, "FIXTURES_DIR", tmp_path)
+    monkeypatch.setattr(client.random, "uniform", lambda a, b: 0)
+    (tmp_path / "haryana_storage_rack.json").write_text(json.dumps({
+        "url": client.PORTALS["haryana"]["url"], "steps": [{"step": 1, "message": "Open"}, {"step": 2, "message": "Search"}],
+        "blocked": True, "result": [],
+        "blocked_reason": "The Haryana e-procurement site requires a captcha to perform tender searches. More detail."}))
+    events = []
+    assert asyncio.run(client.sweep_portal("haryana", "storage rack", events.append)) == []
+    assert [e.type for e in events] == ["started", "step", "step", "error"]
+    assert events[-1].direct_url == client.PORTALS["haryana"]["url"]
+    assert events[-1].message == ("Blocked: The Haryana e-procurement site requires a captcha to perform tender "
+                                  "searches. Open on portal.")
+
+
+def test_agent_run_past_the_hard_timeout_becomes_an_error_card(monkeypatch):
+    """TinyFish's max_duration_seconds is soft (a run went 352 s): we stop waiting ourselves."""
+    monkeypatch.setenv("FALLBACK_MODE", "false")
+    monkeypatch.setattr(client, "AGENT_TIMEOUT", 0.2)
+
+    class Hanging:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        def __aiter__(self):
+            return self
+        async def __anext__(self):
+            await asyncio.sleep(10)
+
+    class TF:
+        class agent:
+            @staticmethod
+            def stream(**kw):
+                return Hanging()
+    monkeypatch.setattr(client, "_tf", lambda: TF)
+    events = []
+    assert asyncio.run(client.sweep_portal("gem", "storage rack", events.append)) == []
+    assert events[-1].type == "error" and "stopped waiting" in events[-1].message
+    assert events[-1].direct_url == client.PORTALS["gem"]["url"]
+
+
+def test_guessed_gem_document_urls_are_dropped():
+    raw = {"bid_no": "GEM/2026/B/8186409", "title": "Steel Almirah", "end_date": "13-11-2026 7:00 PM",
+           "doc_url": "https://bidplus.gem.gov.in/showbiddata/GEM/2026/B/8186409"}
+    (b,) = client.to_listings("gem", [raw])
+    assert b.doc_url is None and b.source_url == client.PORTALS["gem"]["url"]

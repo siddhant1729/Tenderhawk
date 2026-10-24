@@ -27,7 +27,7 @@ def parse_demo_now(value: str) -> datetime:
     return as_ist(datetime.fromisoformat(value.strip()))
 
 
-def _newest_recording() -> datetime | None:
+def newest_recording() -> datetime | None:
     newest = None
     for p in FIXTURES_DIR.glob("*.json"):
         try:
@@ -50,7 +50,7 @@ def demo_now() -> tuple[datetime | None, str]:
             return parse_demo_now(raw), "DEMO_NOW"
         except ValueError:
             log.warning("DEMO_NOW=%r is not an ISO datetime; ignoring it", raw)
-    rec = _newest_recording()
+    rec = newest_recording()
     return (rec, "fixture recorded_at") if rec else (None, "real")
 
 
