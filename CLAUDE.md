@@ -61,7 +61,7 @@ Check the installed SDK for exact method names/signatures before assuming; adapt
 - Captcha/blocked portals: skip and surface a direct link. **Never bypass captchas.** Read-only: never submit bids.
 
 ## Stack
-Python 3.11+, FastAPI, SQLAlchemy 2 + Alembic, psycopg, Pydantic v2, Redis, PostgreSQL 16 + pgvector, TinyFish SDK, Anthropic Claude (`claude-sonnet-5-5` eligibility parser via tool-use structured output; `claude-haiku-5-5` light tasks) **or Groq free tier `openai/gpt-oss-120b` when there is no Anthropic key (our current setup)**, OpenAI `text-embedding-3-small` (1536-d) embeddings (optional; keyword-overlap ranking without a key), PyMuPDF (+ OCR fallback), Next.js + Tailwind, Twilio, Docker Compose.
+Python 3.11+, FastAPI, SQLAlchemy 2 + Alembic, psycopg, Pydantic v2, Redis, PostgreSQL 16 + pgvector, TinyFish SDK, Groq free tier (`openai/gpt-oss-120b` eligibility parser via strict JSON-schema output; `openai/gpt-oss-20b` light tasks; no Anthropic key, so Claude is not used), OpenAI `text-embedding-3-small` (1536-d) embeddings (optional; keyword-overlap ranking without a key), PyMuPDF (+ OCR fallback), Next.js + Tailwind, Twilio, Docker Compose.
 
 ## Repo layout & ownership
 ```
