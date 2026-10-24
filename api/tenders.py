@@ -39,10 +39,11 @@ def tenders_missing_text(ids: list[int]) -> list[tuple[int, str]]:
         return [(r.id, r.doc_url) for r in db.execute(q)]
 
 
-def save_doc_text(tender_id: int, text: str) -> None:
+def save_doc_text(tender_id: int, text: str, source: str | None = None) -> None:
     with SessionLocal() as db:
         t = db.get(Tender, tender_id)
         t.doc_text = text
+        t.doc_source = source
         db.commit()
 
 
@@ -53,8 +54,9 @@ def tenders_missing_eligibility(ids: list[int]) -> list[tuple[int, str | None, s
         return [(r.id, r.doc_url, r.doc_text) for r in db.execute(q)]
 
 
-def save_eligibility(tender_id: int, eligibility: dict) -> None:
+def save_eligibility(tender_id: int, eligibility: dict, source: str | None = None) -> None:
     with SessionLocal() as db:
         t = db.get(Tender, tender_id)
         t.eligibility = eligibility
+        t.eligibility_source = source
         db.commit()

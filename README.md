@@ -72,7 +72,7 @@ flowchart LR
     API --> WA
 ```
 
-**One rule holds the design together:** TinyFish is the only component that touches the live web. Everything downstream works on validated JSON, which is also why the whole demo can replay offline.
+**One rule holds the design together:** TinyFish is the only component that navigates portals; bid PDFs it finds are downloaded via an Indian connection. Both happen only in `agents/` (GeM PDFs: TinyFish Fetch has no Indian proxy and a TinyFish agent can't read a PDF, so `agents/` downloads the file itself). Everything downstream works on validated JSON, which is also why the whole demo can replay offline.
 
 | TinyFish API | Used for | When |
 |---|---|---|

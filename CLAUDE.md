@@ -34,7 +34,7 @@ Sources (GeM, CPPP, Haryana e-proc)
   -> Serve (Matcher: rules + rank | FastAPI: REST + SSE)
   -> Users (Next.js dashboard with live agent panel | Twilio WhatsApp + email alerts)
 ```
-**Invariant: TinyFish is the only component that touches the live web. Everything downstream works on validated JSON.**
+**Invariant: TinyFish is the only component that navigates portals; bid PDFs it finds are downloaded via an Indian connection. Both happen only in `agents/`; no other module downloads anything. Everything downstream works on validated JSON.**
 
 ## TinyFish usage
 - **Agent API** — core crawler, goal-based run per portal × category, `/run-async` + `/run-sse` (stream steps to UI). Billed: use only on listing sweeps, never per user.

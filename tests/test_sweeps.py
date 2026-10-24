@@ -61,21 +61,21 @@ def test_partial_failure_still_returns_bids(monkeypatch, events):
 def test_one_bad_document_does_not_sink_the_others(monkeypatch, events):
     saved = []
     monkeypatch.setattr(sweeps, "tenders_missing_text", lambda ids: [(1, "u1"), (2, "u2")])
-    monkeypatch.setattr(sweeps, "save_doc_text", lambda tid, text: saved.append(tid))
+    monkeypatch.setattr(sweeps, "save_doc_text", lambda tid, text, source=None: saved.append((tid, source)))
 
     async def fetch(url):
         if url == "u1":
             raise RuntimeError("network")
-        return "EMD Amount 100000"
+        return "EMD Amount 100000", "direct"
 
     monkeypatch.setattr(sweeps, "fetch_doc_text", fetch)
-    assert asyncio.run(sweeps._fetch_docs("s", [1, 2])) == 1 and saved == [2]
+    assert asyncio.run(sweeps._fetch_docs("s", [1, 2])) == 1 and saved == [(2, "direct")]
 
 
 def test_one_bad_parse_does_not_sink_the_others(monkeypatch, events):
     saved = []
     monkeypatch.setattr(sweeps, "tenders_missing_eligibility", lambda ids: [(1, "u1", "a"), (2, "u2", "b")])
-    monkeypatch.setattr(sweeps, "save_eligibility", lambda tid, el: saved.append(tid))
+    monkeypatch.setattr(sweeps, "save_eligibility", lambda tid, el, source=None: saved.append(tid))
     monkeypatch.setattr(sweeps, "fallback_mode", lambda: False)
 
     async def parse(text):

@@ -18,7 +18,8 @@ from api.db import engine, get_db
 from api.documents import excerpt
 from api.matcher import VERDICT_RANK
 from api.matching import rematch
-from api.models import Match, Profile
+from api import llm
+from api.models import Match, Profile, Tender
 from api.schemas import (Created, MatchDetail, MatchRunOut, MatchSummary, ProfileIn, ProfileOut, SweepIn,
                          SweepOut)
 from api.sweeps import run_sweep
@@ -98,6 +99,20 @@ def list_matches(profile_id: int, include_low_relevance: bool = True, db: Sessio
                                           m.tender.end_date))
 
 
+PORTAL_NAMES = {"gem": "GeM", "cppp": "CPPP", "haryana": "Haryana e-proc"}
+
+
+def provenance(t: Tender) -> dict:
+    name = PORTAL_NAMES.get(t.portal, t.portal)
+    return {
+        "found_by": f"recorded TinyFish run on {name}" if fallback_mode() else f"TinyFish agent on {name}",
+        "portal": t.portal,
+        "doc_source": t.doc_source if t.doc_text else None,
+        "eligibility_by": None if t.eligibility is None else
+                          "recorded parse" if t.eligibility_source == "recorded" else f"LLM ({llm.LLM_MODEL})",
+    }
+
+
 @app.get("/matches/{match_id}", response_model=MatchDetail)
 def get_match(match_id: int, db: Session = Depends(get_db)):
     m = db.get(Match, match_id)
@@ -107,7 +122,7 @@ def get_match(match_id: int, db: Session = Depends(get_db)):
     reasons = [{**r, "excerpt": excerpt(t.doc_text or "", r.get("source_clause") or "")} for r in m.reasons]
     return MatchDetail(id=m.id, profile_id=m.profile_id, verdict=m.verdict, fit_score=m.fit_score, relevant=m.relevant, reasons=reasons,
                        missing_docs=m.missing_docs, alerted_at=m.alerted_at, tender=t,
-                       eligibility=t.eligibility, corrigenda=t.corrigenda or [])
+                       eligibility=t.eligibility, corrigenda=t.corrigenda or [], provenance=provenance(t))
 
 
 @app.post("/profiles/{profile_id}/match", response_model=MatchRunOut)

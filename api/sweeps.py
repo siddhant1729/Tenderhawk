@@ -16,7 +16,6 @@ from api import llm
 from api.config import fallback_mode
 from api.corrigenda import card_emitter, check_corrigenda
 from api.db import SessionLocal
-from api.documents import to_text
 from api.eligibility import parse_eligibility
 from api.events import publish
 from api.matching import rematch
@@ -89,10 +88,9 @@ async def _fetch_docs(sweep_id: str, tender_ids: list[int]) -> int:
     async def one(tid: int, url: str) -> bool:
         try:
             async with sem:
-                raw = await asyncio.wait_for(fetch_doc_text(url), DOC_FETCH_TIMEOUT)
-            text = to_text(raw) if raw else ""
+                text, source = await asyncio.wait_for(fetch_doc_text(url), DOC_FETCH_TIMEOUT)
             if text:
-                await asyncio.to_thread(save_doc_text, tid, text)
+                await asyncio.to_thread(save_doc_text, tid, text, source)
             return bool(text)
         except Exception as e:
             log.warning("document fetch/save failed for tender %s (%s): %r", tid, url, e)
@@ -127,11 +125,11 @@ async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
 
     async def one(tid: int, doc_url: str | None, text: str) -> bool:
         try:
-            el = recorded.get(doc_url or "")
+            el, source = recorded.get(doc_url or ""), "recorded"
             if el is None:
                 async with sem:
-                    el = await asyncio.wait_for(parse_eligibility(text), PARSE_TIMEOUT)
-            await asyncio.to_thread(save_eligibility, tid, el)
+                    el, source = await asyncio.wait_for(parse_eligibility(text), PARSE_TIMEOUT), "llm"
+            await asyncio.to_thread(save_eligibility, tid, el, source)
             return True
         except Exception as e:  # LLMError, timeout, DB error: this tender stays unparsed -> CHECK_DOCS
             log.warning("eligibility parse failed for tender %s: %r", tid, e)

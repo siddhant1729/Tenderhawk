@@ -35,7 +35,9 @@ class Tender(Timestamps, Base):
     doc_url: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str] = mapped_column(Text)
     doc_text: Mapped[str | None] = mapped_column(Text)
+    doc_source: Mapped[str | None] = mapped_column(String(16))  # fetch | direct | fixture
     eligibility: Mapped[dict | None] = mapped_column(JSONB)       # PLAN.md §3.4
+    eligibility_source: Mapped[str | None] = mapped_column(String(16))  # llm | recorded
     corrigenda: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     embedding = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
 

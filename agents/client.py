@@ -1,4 +1,8 @@
-"""TinyFish wrapper. The only module in the repo that touches the live web (PLAN.md §3.2)."""
+"""TinyFish wrapper. The only module in the repo that touches the live web (PLAN.md §3.2).
+
+TinyFish navigates every portal. Bid PDFs it finds that TinyFish Fetch can't read (GeM: Fetch has no Indian
+proxy) are downloaded directly over the Indian connection, here and nowhere else.
+"""
 import asyncio
 import json
 import logging
@@ -7,14 +11,16 @@ import random
 import re
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
+import httpx
 from dotenv import load_dotenv
 from pydantic import ValidationError
 from tinyfish import AgentConfig, AsyncTinyFish, CompleteEvent, ProgressEvent, ProxyConfig, StartedEvent
 
 from agents.goals import PORTALS, goal_for
 from agents.schemas import AGENT_OUTPUT_SCHEMA, BidListing, Corrigendum, StepEvent
+from api.documents import to_text
 
 load_dotenv()
 log = logging.getLogger("agents")
@@ -26,8 +32,13 @@ Emit = Callable[[StepEvent], None]
 # Indian govt portals drop connections from non-Indian IPs (GeM: ERR_EMPTY_RESPONSE without this).
 INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
 
-# Hard caps so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
-AGENT_LIMITS = AgentConfig(max_steps=30, max_duration_seconds=300)
+# Hard cap so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
+# Time only: a custom max_steps is rejected (HTTP 403 "not enabled for custom max steps", beta-only).
+AGENT_LIMITS = AgentConfig(max_duration_seconds=300)
+
+# Direct downloads: only bid documents on the portals we sweep, only over HTTPS, only PDFs of sane size.
+DOC_HOSTS = {urlparse(p["url"]).hostname for p in PORTALS.values()}
+DOC_MAX_BYTES = 15_000_000
 
 _client: AsyncTinyFish | None = None
 
@@ -153,10 +164,7 @@ def _fixture_docs() -> dict[str, str]:
     return docs
 
 
-async def fetch_doc_text(url: str) -> str:
-    """Bid page/document -> clean text via TinyFish Fetch. Returns '' if it can't be read."""
-    if fallback_mode():
-        return _fixture_docs().get(url, "")
+async def _fetch(url: str) -> str:
     try:
         resp = await _tf().fetch.get_contents([url], format="markdown")
     except Exception:
@@ -165,7 +173,38 @@ async def fetch_doc_text(url: str) -> str:
     if resp.errors or not resp.results:
         log.warning("fetch returned no text for %s: %s", url, resp.errors)
         return ""
-    return resp.results[0].text or ""
+    return to_text(resp.results[0].text or "")
+
+
+async def _direct(url: str) -> str:
+    """Last resort for a bid PDF on a swept portal. A TinyFish agent can't read these (the browser downloads
+    the PDF instead of showing it: 20 steps, no text), so fetch the file itself over the Indian connection."""
+    u = urlparse(url)
+    if u.scheme != "https" or u.hostname not in DOC_HOSTS:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as http:
+            r = await http.get(url)
+    except httpx.HTTPError as e:
+        log.warning("direct download failed for %s: %r", url, e)
+        return ""
+    if r.status_code != 200 or len(r.content) > DOC_MAX_BYTES or r.content[:5] != b"%PDF-":
+        log.warning("direct download of %s: HTTP %s, %d bytes, not a usable PDF", url, r.status_code, len(r.content))
+        return ""
+    return to_text(r.content)
+
+
+async def fetch_doc_text(url: str) -> tuple[str, str]:
+    """Bid page/document -> (clean text, source). source: fetch | direct | fixture, or "" with no text."""
+    if fallback_mode():
+        text = _fixture_docs().get(url, "")
+        return (text, "fixture") if text else ("", "")
+    for source, get in (("fetch", _fetch), ("direct", _direct)):
+        text = await get(url)
+        if text.strip():
+            log.info("doc text for %s: %d chars, source=%s", url, len(text), source)
+            return text, source
+    return "", ""
 
 
 async def search_corrigenda(bid: BidListing) -> list[Corrigendum]:

@@ -71,9 +71,19 @@ class MatchSummary(BaseModel):
     tender: TenderSummary
 
 
+class Provenance(BaseModel):
+    """Where each part of a verdict came from, shown on the match page."""
+    found_by: str                 # "TinyFish agent on GeM" / "recorded TinyFish run (GeM)"
+    portal: str
+    doc_source: str | None        # fetch | direct | fixture; None = no document text
+    eligibility_by: str | None    # "LLM (openai/gpt-oss-120b)" / "recorded parse"; None = not parsed
+    verdict_by: str = "rules (api/matcher.py)"
+
+
 class MatchDetail(MatchSummary):
     eligibility: dict | None
     corrigenda: list
+    provenance: Provenance
 
 
 class MatchRunOut(BaseModel):

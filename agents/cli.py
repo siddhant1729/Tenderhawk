@@ -29,8 +29,8 @@ async def record(portal: str, category: str) -> None:
     docs = {}
     for b in bids:
         if b.doc_url:
-            text = await fetch_doc_text(b.doc_url)
-            print(f"fetched {len(text)} chars: {b.doc_url}", flush=True)
+            text, source = await fetch_doc_text(b.doc_url)
+            print(f"fetched {len(text)} chars ({source or 'no text'}): {b.doc_url}", flush=True)
             if text:
                 docs[b.doc_url] = text
     fx = {

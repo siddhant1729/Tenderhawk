@@ -30,8 +30,9 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 | GeM drops connections from non-Indian IPs (agent saw `ERR_EMPTY_RESPONSE`, "site down") | Agent runs use `ProxyConfig(country_code="IN")` |
 | `output_schema` rejects `description` keys (HTTP 400) | Field hints live in the goal text (`agents/goals.py`) |
 | GeM's search for "steel rack" returns no rack bids; buyers write "storage rack" / "Metal Shelving Racks" | Keyword choice decides whether a live sweep finds anything (see §7); goals match on items/title, never on buyer names |
-| Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option), but Search API results include GeM `showbidDocument` text | No live doc text for GeM yet. For fixtures: hand-save bid PDFs and run `python -m delivery.build_fixture attach` (PDF → text → parse). Lasting fix (e.g. via Search) still open in `agents/` |
-| One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 30 steps / 300 s (`AGENT_LIMITS`); keep goals cheap |
+| Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option). A TinyFish agent can't read them either (run `b4065139`, 2026-10-24: 20 steps, 110 s, no text; the browser downloads the PDF) | `agents.fetch_doc_text` falls back to a direct PDF download over the Indian connection (`source=direct`) |
+| Custom `max_steps` is rejected: HTTP 403 "Your account is not enabled for custom max steps yet" | `AGENT_LIMITS` caps time only (300 s); passing `max_steps` would fail every live run |
+| One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 300 s (`AGENT_LIMITS`); keep goals cheap |
 
 ---
 
@@ -70,14 +71,16 @@ class Corrigendum(BaseModel):
 ```
 
 ### 3.2 Agent functions: `agents/` (the only code that touches the web)
+> TinyFish is the only component that navigates portals; bid PDFs it finds are downloaded via an Indian connection.
 ```python
 async def sweep_portal(portal: str, category: str, emit: Callable[[StepEvent], None], sweep_id: str = "local") -> list[BidListing]
-async def fetch_doc_text(url: str) -> str                      # TinyFish Fetch API
+async def fetch_doc_text(url: str) -> tuple[str, str]         # (text, source): TinyFish Fetch, else direct PDF download
 async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Search API
 ```
 - `sweep_id` is stamped on every emitted `StepEvent`; the API passes the id it publishes to Redis.
 - Fixture file names come from the keyword: `category.lower()`, non-alphanumerics → `_` (e.g. `"steel rack"` → `gem_steel_rack.json`).
-- Every agent run goes through an Indian proxy and is capped at 30 steps / 300 s; a capped run ends as an `error` event with `direct_url`.
+- Every agent run goes through an Indian proxy and is capped at 300 s (a custom step cap is rejected by TinyFish: beta only); a capped run ends as an `error` event with `direct_url`.
+- Bid documents: TinyFish Fetch first; if it returns nothing, a direct HTTPS download of the PDF (only hosts of the 3 swept portals, PDF only, ≤15 MB). `source` (`fetch` / `direct` / `fixture`) is stored as `tenders.doc_source` and shown in `/matches/{id}` → `provenance`.
 - In `FALLBACK_MODE`, `sweep_portal` replays `delivery/fixtures/{portal}_{category}.json`. It emits the recorded steps with 0.3–0.8 s delays.
 - Unusable run result: retry the run once. Invalid bid: log and skip that bid. One bad bid never fails a sweep.
 - Captcha or blocked portal: emit an `error` event with `direct_url`, return `[]`. **Never bypass the captcha.**
@@ -235,7 +238,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 ### H21–24 · Freeze
 - **Fixes only.** No new features, no refactors.
-- README with run steps, architecture diagram and the "TinyFish is the only thing touching the web" story.
+- README with run steps, architecture diagram and the "TinyFish navigates every portal" story.
 - Rehearse the demo twice in each mode. Agree who presents and who drives the laptop.
 
 ---
@@ -248,7 +251,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
   - Never bypass captchas.
   - Never submit bids (read-only).
   - Never commit secrets.
-  - Only `agents/` touches the live web.
+  - Only `agents/` touches the live web: TinyFish is the only component that navigates portals; bid PDFs it finds are downloaded via an Indian connection.
 
 ---
 
@@ -272,16 +275,19 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-**In short:** every feature in scope is built and merged to `main` (all `feat/*` branches merged). Only **one real code gap** remains (live GeM document text, below). Everything else is setup, real fixtures and rehearsal. No paid keys are needed: Groq (free) parses, keyword overlap ranks, Twilio's free trial sends WhatsApp.
+**In short:** every feature in scope is built and merged to `main` (all `feat/*` branches merged). The one real code gap (live GeM document text) is closed (C1). Everything else is setup, real fixtures and rehearsal. No paid keys are needed: Groq (free) parses, keyword overlap ranks, Twilio's free trial sends WhatsApp.
 
 All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` runs the API (:8000) and dashboard (:3000) too.
 
-**Done today (2026-10-24):** branches checked (all merged, `main` = `origin/main`); Groq free tier replaced Claude as the only LLM (Anthropic removed); parser verified on 2 real GeM bid PDFs: every criterion found, every clause verbatim in the document, ~7 s each, MSE EMD exemption caught.
+**Done today (2026-10-24):**
+- Branches checked (all merged, `main` = `origin/main`); Groq free tier replaced Claude as the only LLM (Anthropic removed); parser verified on 2 real GeM bid PDFs: every criterion found, every clause verbatim in the document, ~7 s each, MSE EMD exemption caught.
+- Phase 0 (`fix/demo-hardening`): web `npm install` + `npm test` (14 ✅) + `npm run build` ✅; one alembic head. Docker not running (Docker Desktop's `docker-desktop` WSL distro stopped), so DB steps and the 2 Postgres alert tests wait for it.
+- Phase 1 (C1): GeM doc text via Fetch → direct PDF download in `agents/` (verified live, `source=direct`); agent route tried once and can't read PDFs; `AGENT_LIMITS` no longer sends the rejected `max_steps`; `tenders.doc_source` / `eligibility_source` + `/matches/{id}` provenance.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |
 |---|---|---|---|
-| C1 | **Live GeM document text.** TinyFish Fetch → `bidplus.gem.gov.in/showbidDocument/…` still returns `proxy_error` (re-checked 2026-10-24); Fetch has no proxy option. So in a live sweep every GeM match is CHECK_DOCS (amber) and nothing turns green. A plain download from an Indian connection works (HTTP 200, real PDF). **Decision needed:** (a) fall back to a direct download in `agents.fetch_doc_text` when Fetch fails; it breaks the "TinyFish is the only thing touching the web" invariant for GeM PDFs, but stays inside `agents/`. Or (b) keep live mode amber and show green only from fixtures. | Siddhant | ~20 lines + a test if (a) |
+| C1 | ✅ **Live GeM document text** (2026-10-24): Fetch → else direct PDF download in `agents/`; verified live on `showbidDocument/9845350` (19,776 chars, `source=direct`). The agent route was tried and can't read PDFs (§1) | Siddhant | done |
 | C2 | **CPPP + Haryana live runs.** Never run live; goals may need fixing after the first run (captcha → clean `error` card with portal link). Also confirm the 30-step / 300 s cap ends a run cleanly. | Siddhant | billed agent runs; keep to 1 each |
 | C3 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | after fixtures |
 | C4 | Optional, cut first: email via `SMTP_URL` (code done, needs an SMTP account, e.g. a Gmail app password) | Vandan | |
@@ -306,7 +312,7 @@ Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text la
 | H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | `python -m delivery.seed` |
 | H0–4 | Next.js scaffold + profile form | Aditya (built by Harsh) | ✅ | `web/`, Next.js 16 + Tailwind 4; Ramesh demo fill button |
 | H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
-| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs still returns `proxy_error`** (re-checked 2026-10-24), so no live doc text: see C1. CPPP + Haryana not run live (C2). Runs capped at 30 steps / 300 s (untested in a run). |
+| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). GeM doc text ✅ via direct PDF download when Fetch fails (C1). CPPP + Haryana not run live (C2). Runs capped at 300 s (custom step cap rejected by TinyFish). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Groq free tier (Claude removed). 2 of 5 real GeM docs parsed on Groq with verbatim clauses (storage rack bid GEM/2026/B/7509529, IIM Indore GEM/2025/B/6356290) |
