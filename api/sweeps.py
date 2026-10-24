@@ -4,18 +4,26 @@ Each portal card in the UI gets one started -> steps -> result|error sequence, e
 is searched once per keyword: per-keyword started/result/error events are folded into steps.
 """
 import asyncio
+import json
 import logging
+from functools import lru_cache
 
-from agents.client import fetch_doc_text, sweep_portal
+from agents.client import FIXTURES_DIR, fetch_doc_text, sweep_portal
 from agents.goals import PORTALS
 from agents.schemas import BidListing, StepEvent
+from api.config import fallback_mode
 from api.db import SessionLocal
+from api.documents import to_text
+from api.eligibility import parse_eligibility
 from api.events import publish
+from api.llm import LLMError
 from api.models import Profile
-from api.tenders import save_doc_text, tenders_missing_text, upsert_tenders
+from api.tenders import (save_doc_text, save_eligibility, tenders_missing_eligibility, tenders_missing_text,
+                         upsert_tenders)
 
 log = logging.getLogger("api.sweeps")
 DOC_FETCH_CONCURRENCY = 4
+LLM_CONCURRENCY = 4
 
 
 def _keywords(profile: Profile) -> list[str]:
@@ -70,11 +78,47 @@ async def _fetch_docs(sweep_id: str, tender_ids: list[int]) -> int:
     async def one(tid: int, url: str) -> bool:
         async with sem:
             text = await fetch_doc_text(url)
+        text = to_text(text) if text else ""
         if text:
             await asyncio.to_thread(save_doc_text, tid, text)
         return bool(text)
 
     return sum(await asyncio.gather(*(one(t, u) for t, u in todo)))
+
+
+@lru_cache(maxsize=1)
+def _fixture_eligibility() -> dict[str, dict]:
+    """Recorded parses ({doc_url: eligibility}) so FALLBACK_MODE works without the LLM."""
+    out: dict[str, dict] = {}
+    for p in FIXTURES_DIR.glob("*.json"):
+        data = json.loads(p.read_text())
+        if isinstance(data, dict):
+            out.update(data.get("eligibility", {}))
+    return out
+
+
+async def _parse_docs(sweep_id: str, tender_ids: list[int]) -> int:
+    """Eligibility for every tender that has text but no parse yet. Failures leave it null (-> CHECK_DOCS)."""
+    todo = await asyncio.to_thread(tenders_missing_eligibility, tender_ids)
+    if not todo:
+        return 0
+    publish(StepEvent(sweep_id=sweep_id, agent="all", type="step",
+                      message=f"Reading eligibility criteria from {len(todo)} documents"))
+    sem = asyncio.Semaphore(LLM_CONCURRENCY)
+
+    async def one(tid: int, doc_url: str | None, text: str) -> bool:
+        el = _fixture_eligibility().get(doc_url or "") if fallback_mode() else None
+        if el is None:
+            try:
+                async with sem:
+                    el = await parse_eligibility(text)
+            except LLMError as e:
+                log.warning("eligibility parse failed for tender %s: %s", tid, e)
+                return False
+        await asyncio.to_thread(save_eligibility, tid, el)
+        return True
+
+    return sum(await asyncio.gather(*(one(*row) for row in todo)))
 
 
 async def run_sweep(sweep_id: str, profile_id: int) -> None:
@@ -93,7 +137,8 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
         bids = [b for bs in per_portal for b in bs]
         all_ids, new_ids = await asyncio.to_thread(upsert_tenders, bids)
         read = await _fetch_docs(sweep_id, all_ids)
-        summary = f"{len(all_ids)} tenders ({len(new_ids)} new), {read} documents read"
+        parsed = await _parse_docs(sweep_id, all_ids)
+        summary = f"{len(all_ids)} tenders ({len(new_ids)} new), {read} documents read, {parsed} parsed"
     except Exception as e:
         log.exception("sweep %s failed", sweep_id)
         publish(StepEvent(sweep_id=sweep_id, agent="all", type="error", message=f"Sweep failed: {e}"))

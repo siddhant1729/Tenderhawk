@@ -44,3 +44,17 @@ def save_doc_text(tender_id: int, text: str) -> None:
         t = db.get(Tender, tender_id)
         t.doc_text = text
         db.commit()
+
+
+def tenders_missing_eligibility(ids: list[int]) -> list[tuple[int, str | None, str]]:
+    with SessionLocal() as db:
+        q = select(Tender.id, Tender.doc_url, Tender.doc_text).where(
+            Tender.id.in_(ids), Tender.doc_text.is_not(None), Tender.eligibility.is_(None))
+        return [(r.id, r.doc_url, r.doc_text) for r in db.execute(q)]
+
+
+def save_eligibility(tender_id: int, eligibility: dict) -> None:
+    with SessionLocal() as db:
+        t = db.get(Tender, tender_id)
+        t.eligibility = eligibility
+        db.commit()
