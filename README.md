@@ -85,24 +85,62 @@ flowchart LR
 This is a 24-hour hackathon build. What exists right now:
 
 - [x] **Agents layer** (`agents/`): TinyFish wrapper, schemas, goals for GeM / CPPP / Haryana, CLI, fixture recorder, offline replay
-- [x] First live GeM run recorded to `delivery/fixtures/`
-- [ ] FastAPI backend, Postgres models, eligibility parser, matcher (`api/`)
+- [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, Claude eligibility parser, matcher with embeddings and clause excerpts, daily corrigenda job — 42 tests
+- [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis, Ramesh seed profile
+- [ ] Demo-ready fixtures: the first GeM recording exists but needs a re-record with relevant bids and bid-document text
 - [ ] Next.js dashboard with live agents panel (`web/`)
-- [ ] WhatsApp / email alerts, Docker Compose (`delivery/`)
+- [ ] WhatsApp / email alerts (`POST /matches/{id}/alert`)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
 
 ## Quickstart
 
-Requires Python 3.11+ and a [TinyFish API key](https://tinyfish.ai).
+Requires Python 3.11+, Docker, and a [TinyFish API key](https://tinyfish.ai).
 
 ```bash
 git clone https://github.com/siddhant1729/Tenderhawk.git
 cd Tenderhawk
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then fill in TINYFISH_API_KEY
+cp .env.example .env        # then fill in the keys
 ```
+
+### Run the API
+
+```bash
+docker compose up -d              # Postgres 16 + pgvector, Redis
+alembic upgrade head
+python -m delivery.seed           # creates Ramesh's profile, prints its id
+uvicorn api.main:app --reload     # http://localhost:8000
+```
+
+```bash
+curl localhost:8000/health
+curl -X POST localhost:8000/sweeps -H 'content-type: application/json' -d '{"profile_id": <id>}'
+curl -N localhost:8000/sweeps/<sweep_id>/events      # live agent steps (SSE)
+curl localhost:8000/profiles/<id>/matches            # verdicts, best fit first
+```
+
+Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no network and no credits.
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET` | `/health` | DB, Redis, fallback mode, next corrigenda check |
+| `POST` | `/profiles` · `GET /profiles/{id}` | Create / read a business profile |
+| `POST` | `/sweeps` | Start a sweep in the background → `sweep_id` |
+| `GET` | `/sweeps/{id}/events` | SSE stream of agent steps (late clients get the full log) |
+| `GET` | `/profiles/{id}/matches` | Matches with verdict and fit score |
+| `GET` | `/matches/{id}` | Tender, eligibility with source clauses, reasons, missing docs, corrigenda |
+| `POST` | `/profiles/{id}/match` | Re-run the matcher without sweeping |
+| `POST` | `/corrigenda/check` | Run the corrigenda job now (Search API, no credits) |
+
+### Run the tests
+
+```bash
+python -m pytest -q tests          # no API keys needed
+```
+
+### Drive the agents directly
 
 **Sweep a portal live** (uses TinyFish credits, takes 1–3 minutes):
 
@@ -139,7 +177,10 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `FALLBACK_MODE` | `true` replays `delivery/fixtures/*.json` instead of live runs |
 | `ANTHROPIC_API_KEY`, `LLM_MODEL`, `LLM_MODEL_FAST` | Eligibility parser (`claude-sonnet-5-5`) and light tasks (`claude-haiku-5-5`) |
 | `OPENAI_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` | `text-embedding-3-small`, 1536 dims |
+| `LLM_EFFORT`, `LLM_FALLBACKS` | Parser effort level; refusal fallback |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
+| `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
+| `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
 | `TWILIO_*`, `ALERT_WHATSAPP_TO`, `SMTP_URL` | Alerts |
 
 See [`.env.example`](.env.example). Never commit `.env`.
@@ -148,9 +189,10 @@ See [`.env.example`](.env.example). Never commit `.env`.
 
 ```
 agents/      TinyFish wrapper, portal goals, schemas, SSE step events
-api/         FastAPI app, models, migrations, eligibility parser, matcher
-web/         Next.js dashboard: profile form, live agents panel, matches
-delivery/    Alerts, seed profiles, fixtures, fallback mode, Docker
+api/         FastAPI app, models, migrations, eligibility parser, matcher, corrigenda job
+web/         Next.js dashboard: profile form, live agents panel, matches   (in progress)
+delivery/    Seed profile, fixtures; alerts to come
+tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 ```
 
 ## Ground rules
@@ -158,6 +200,7 @@ delivery/    Alerts, seed profiles, fixtures, fallback mode, Docker
 - 🚫 **Never bypass a captcha.** A blocked portal is skipped and the user gets a direct link.
 - 👀 **Read-only.** TenderHawk never submits or participates in a bid.
 - 🇮🇳 Agent runs go through an Indian proxy, because government portals drop connections from foreign IPs.
+- ⏱️ Agent runs are capped at 30 steps / 300 s, so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
 - 🔑 Config comes from env vars only; secrets never enter the repo.
 
 ## Who it's for
