@@ -27,6 +27,11 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 | The agent chose its own key names (`bid_number` instead of `bid_no`) | Always pass `output_schema`; validate with Pydantic |
 | GeM date format: `24-10-2026 2:00 PM IST` | Shared date parser in `agents/schemas.py` |
 | `.env` is gitignored, and the key loads via `python-dotenv` | Copy `.env.example` → `.env` and fill it in locally |
+| GeM drops connections from non-Indian IPs (agent saw `ERR_EMPTY_RESPONSE`, "site down") | Agent runs use `ProxyConfig(country_code="IN")` |
+| `output_schema` rejects `description` keys (HTTP 400) | Field hints live in the goal text (`agents/goals.py`) |
+| GeM's search for "steel rack" returns no rack bids; buyers write "storage rack" / "Metal Shelving Racks" | Keyword choice decides whether a live sweep finds anything (see §7); goals match on items/title, never on buyer names |
+| Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option), but Search API results include GeM `showbidDocument` text | No doc text for GeM yet; try Search for doc text, or hand-save 5 bid PDFs into fixtures |
+| One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 30 steps / 300 s (`AGENT_LIMITS`); keep goals cheap |
 
 ---
 
@@ -66,12 +71,15 @@ class Corrigendum(BaseModel):
 
 ### 3.2 Agent functions: `agents/` (the only code that touches the web)
 ```python
-async def sweep_portal(portal: str, category: str, emit: Callable[[StepEvent], None]) -> list[BidListing]
+async def sweep_portal(portal: str, category: str, emit: Callable[[StepEvent], None], sweep_id: str = "local") -> list[BidListing]
 async def fetch_doc_text(url: str) -> str                      # TinyFish Fetch API
 async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Search API
 ```
+- `sweep_id` is stamped on every emitted `StepEvent`; the API passes the id it publishes to Redis.
+- Fixture file names come from the keyword: `category.lower()`, non-alphanumerics → `_` (e.g. `"steel rack"` → `gem_steel_rack.json`).
+- Every agent run goes through an Indian proxy and is capped at 30 steps / 300 s; a capped run ends as an `error` event with `direct_url`.
 - In `FALLBACK_MODE`, `sweep_portal` replays `delivery/fixtures/{portal}_{category}.json`. It emits the recorded steps with 0.3–0.8 s delays.
-- On validation failure: retry once, then log and skip that bid. One bad bid never fails a sweep.
+- Unusable run result: retry the run once. Invalid bid: log and skip that bid. One bad bid never fails a sweep.
 - Captcha or blocked portal: emit an `error` event with `direct_url`, return `[]`. **Never bypass the captcha.**
 
 ### 3.3 SSE step event (Redis channel `sweep:{sweep_id}` → `GET /sweeps/{id}/events`)
@@ -191,7 +199,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | Who | Task | Done when |
 |---|---|---|
 | Siddhant | `agents/client.py` wrapper, `schemas.py` (§3.1), goals for GeM/CPPP/Haryana with `output_schema` | `python -m agents.cli gem "steel rack"` prints validated `BidListing`s |
-| Siddhant | Record the first live GeM run → fixture (§3.7) | `delivery/fixtures/gem_steel_racks.json` exists |
+| Siddhant | Record the first live GeM run → fixture (§3.7) | `delivery/fixtures/gem_steel_rack.json` exists with relevant, still-open bids |
 | Harsh | FastAPI app, SQLAlchemy models (Tender/Profile/Match), Alembic init, `/health`, `/profiles` | `alembic upgrade head` + `curl /health` OK |
 | Aditya | Next.js + Tailwind scaffold, layout, profile form (static) | Form renders, posts to a mock |
 | Vandan | `docker-compose.yml`: Postgres 16 + pgvector, Redis; `.env.example`; Ramesh seed profile | `docker compose up` → both healthy |
@@ -243,7 +251,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ## 7. Open decisions (resolve in the first hour)
 - [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). See §4.1.
 - [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
-- [x] **Demo category keyword(s)** for Ramesh → "steel rack", "steel almirah", "fabricated structure" (in `delivery/seed/ramesh.json`). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three.
+- [x] **Demo category keyword(s)** for Ramesh → "steel rack", "steel almirah", "fabricated structure" (in `delivery/seed/ramesh.json`). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three. ⚠️ **Open issue:** a live GeM run for "steel rack" found no rack bids (§1); real GeM rack bids are titled "storage rack" / "Metal Shelving Racks". Consider making "storage rack" the first keyword in `ramesh.json` before recording fixtures.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
 - [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379` (API, Postgres and Redis in use; web once it exists)
 
@@ -260,17 +268,17 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-All backend work below is pushed to `feat/backend` and **not yet merged to `main`**. `POST /matches/{id}/alert` (§3.5) is the only listed endpoint not built yet.
+`agents/` and `api/` are merged to `main` (42 tests pass on the combined code). `POST /matches/{id}/alert` (§3.5) is the only listed endpoint not built yet.
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
 | H0–4 | TinyFish wrapper, schemas, goals, CLI | Siddhant | ✅ | merged to `main` |
-| H0–4 | First live GeM fixture | Siddhant | 🟡 | `gem_steel_rack.json` exists, but its 10 bids are unrelated and already closed, with no docs/parses. Re-record. |
-| H0–4 | FastAPI, models, Alembic, `/health`, `/profiles` | Harsh | ✅ | `feat/backend` |
-| H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | built on `feat/backend` (`python -m delivery.seed`) |
+| H0–4 | First live GeM fixture | Siddhant | 🟡 | `gem_steel_rack.json` exists, but its 10 bids are unrelated (matched "Ministry of Steel") and closed on 24 Oct, with no docs/parses. Re-record once the keyword is settled (§7). |
+| H0–4 | FastAPI, models, Alembic, `/health`, `/profiles` | Harsh | ✅ | |
+| H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | `python -m delivery.seed` |
 | H0–4 | Next.js scaffold + profile form | Aditya | ⬜ | |
 | H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
-| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | code exists; live runs need `TINYFISH_API_KEY`; unknown whether Fetch returns text for GeM PDFs |
+| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs returns `proxy_error`**, so no doc text yet (§1). CPPP + Haryana not run live. Runs capped at 30 steps / 300 s (untested in a run). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya | ⬜ | |
 | H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | built and tested against a stub API; needs `ANTHROPIC_API_KEY` for the "5 real GeM docs" check |
@@ -281,7 +289,7 @@ All backend work below is pushed to `feat/backend` and **not yet merged to `main
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan | ⬜ | |
 | H16–21 | Match detail page with highlighted clause | Aditya | ⬜ | API ready: `GET /matches/{id}` returns `reasons[].excerpt` with highlight offsets |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | 🟡 | backend side done; UI side pending |
-| H21–24 | README, dry runs, tag `v0.1-demo` | All | ⬜ | |
+| H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | `README.md` drafted; update its status list (backend now done) at freeze. Dry runs and tag pending |
 
 **Backend run steps (current):**
 ```
