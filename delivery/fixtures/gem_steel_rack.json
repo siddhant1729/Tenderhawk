@@ -1,0 +1,271 @@
+{
+  "portal": "gem",
+  "category": "steel rack",
+  "url": "https://bidplus.gem.gov.in/all-bids",
+  "goal": "Search the GeM bid list for 'steel rack' using the search box and wait for results. For each bid card read: bid_no (e.g. GEM/2026/B/1234567), title (the items line), item, buyer (ministry and department), quantity, end_date (the 'End Date' value), doc_url (absolute link of the bid number, which opens the bid document). Only keep bids whose closing date is after today. Return at most 10 bids. Do not open more than 2 result pages. If a captcha, OTP or login wall appears, do NOT try to solve it: stop immediately and return blocked=true with blocked_reason and an empty bids list. This is read-only: never click submit, participate, or bid buttons. Copy values exactly as shown (end_date with its time, est_value in INR as shown); use absolute URLs for doc_url; use an empty string for anything not shown.",
+  "recorded_at": "2026-10-24T15:38:04.309177+05:30",
+  "run_id": "d8381c6a-e825-4ec9-8148-72c413a82e14",
+  "steps": [
+    {
+      "step": 1,
+      "message": "Navigate to GeM bid list page"
+    },
+    {
+      "step": 2,
+      "message": "Enter search keyword for steel rack"
+    },
+    {
+      "step": 3,
+      "message": "Click search to find steel rack bids"
+    },
+    {
+      "step": 4,
+      "message": "Extract all bid details from search results page 1"
+    },
+    {
+      "step": 5,
+      "message": "Extract exact bid details from page 1"
+    },
+    {
+      "step": 6,
+      "message": "Navigate to page 2 of search results"
+    },
+    {
+      "step": 7,
+      "message": "Extract all bid details from page 2 of search results"
+    },
+    {
+      "step": 8,
+      "message": "Return search results for steel rack from GeM bid list"
+    }
+  ],
+  "raw_result": {
+    "blocked": false,
+    "blocked_reason": "",
+    "bids": [
+      {
+        "bid_no": "GEM/2026/B/7995183",
+        "title": "TORPEDO LADLES REFRACTORY SETS...",
+        "item": "",
+        "buyer": "Ministry of Steel, Steel Authority of India Limited",
+        "quantity": "6",
+        "est_value": "",
+        "end_date": "24-10-2026 3:42 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9845350"
+      },
+      {
+        "bid_no": "GEM/2026/B/7940614",
+        "title": "Overburden Removal Services - ...",
+        "item": "",
+        "buyer": "Ministry of Steel, MOIL Limited",
+        "quantity": "3000000",
+        "est_value": "",
+        "end_date": "24-10-2026 3:45 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9782369"
+      },
+      {
+        "bid_no": "GEM/2026/B/7951558",
+        "title": "VVVF DRIVE, A&D/DRIVES/AC/2026...",
+        "item": "",
+        "buyer": "Ministry of Steel, Steel Authority of India Limited",
+        "quantity": "3",
+        "est_value": "",
+        "end_date": "24-10-2026 3:46 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9794870"
+      },
+      {
+        "bid_no": "GEM/2026/B/8124639",
+        "title": "Wheel surf powder,Stainless st...",
+        "item": "",
+        "buyer": "Ministry of Micro Small and Medium Enterprises, Ministry of Micro Small and Medium Enterprises",
+        "quantity": "209",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9994005"
+      },
+      {
+        "bid_no": "GEM/2026/B/8120154",
+        "title": "Commercial Motorsed Treadmill,...",
+        "item": "",
+        "buyer": "Sports Department Uttar Pradesh",
+        "quantity": "3975",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9988944"
+      },
+      {
+        "bid_no": "GEM/2026/B/8113552",
+        "title": "1600473101_ DRUM SHAFT ASSEMBL...",
+        "item": "",
+        "buyer": "Ministry of Steel, NMDC Limited",
+        "quantity": "1",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9981122"
+      },
+      {
+        "bid_no": "GEM/2026/B/8108114",
+        "title": "MOT, SQIM, 415Vac, 225SMC4, 4P...",
+        "item": "",
+        "buyer": "Ministry of Steel, Rashtriya Ispat Nigam Limited",
+        "quantity": "13",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9974766"
+      },
+      {
+        "bid_no": "GEM/2026/B/7981908",
+        "title": "GREASE LG 280 GEN PURPOSE FOR ...",
+        "item": "",
+        "buyer": "Ministry of Defence, Department of Military Affairs",
+        "quantity": "8100",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9830419"
+      },
+      {
+        "bid_no": "GEM/2026/B/8113559",
+        "title": "Crimpimg tool D link,River Fox...",
+        "item": "",
+        "buyer": "Ministry of Home Affairs, Central Armed Police Forces",
+        "quantity": "242",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9981130"
+      },
+      {
+        "bid_no": "GEM/2026/B/8030114",
+        "title": "DIGITAL COUNTER",
+        "item": "",
+        "buyer": "Ministry of Steel, Rashtriya Ispat Nigam Limited",
+        "quantity": "6",
+        "est_value": "",
+        "end_date": "24-10-2026 4:00 PM",
+        "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9885337"
+      }
+    ]
+  },
+  "result": [
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/7995183",
+      "title": "TORPEDO LADLES REFRACTORY SETS...",
+      "item": null,
+      "buyer": "Ministry of Steel, Steel Authority of India Limited",
+      "quantity": "6",
+      "est_value": null,
+      "end_date": "2026-10-24T15:42:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9845350",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9845350"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/7940614",
+      "title": "Overburden Removal Services - ...",
+      "item": null,
+      "buyer": "Ministry of Steel, MOIL Limited",
+      "quantity": "3000000",
+      "est_value": null,
+      "end_date": "2026-10-24T15:45:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9782369",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9782369"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/7951558",
+      "title": "VVVF DRIVE, A&D/DRIVES/AC/2026...",
+      "item": null,
+      "buyer": "Ministry of Steel, Steel Authority of India Limited",
+      "quantity": "3",
+      "est_value": null,
+      "end_date": "2026-10-24T15:46:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9794870",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9794870"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8124639",
+      "title": "Wheel surf powder,Stainless st...",
+      "item": null,
+      "buyer": "Ministry of Micro Small and Medium Enterprises, Ministry of Micro Small and Medium Enterprises",
+      "quantity": "209",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9994005",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9994005"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8120154",
+      "title": "Commercial Motorsed Treadmill,...",
+      "item": null,
+      "buyer": "Sports Department Uttar Pradesh",
+      "quantity": "3975",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9988944",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9988944"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8113552",
+      "title": "1600473101_ DRUM SHAFT ASSEMBL...",
+      "item": null,
+      "buyer": "Ministry of Steel, NMDC Limited",
+      "quantity": "1",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9981122",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9981122"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8108114",
+      "title": "MOT, SQIM, 415Vac, 225SMC4, 4P...",
+      "item": null,
+      "buyer": "Ministry of Steel, Rashtriya Ispat Nigam Limited",
+      "quantity": "13",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9974766",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9974766"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/7981908",
+      "title": "GREASE LG 280 GEN PURPOSE FOR ...",
+      "item": null,
+      "buyer": "Ministry of Defence, Department of Military Affairs",
+      "quantity": "8100",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9830419",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9830419"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8113559",
+      "title": "Crimpimg tool D link,River Fox...",
+      "item": null,
+      "buyer": "Ministry of Home Affairs, Central Armed Police Forces",
+      "quantity": "242",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9981130",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9981130"
+    },
+    {
+      "portal": "gem",
+      "bid_no": "GEM/2026/B/8030114",
+      "title": "DIGITAL COUNTER",
+      "item": null,
+      "buyer": "Ministry of Steel, Rashtriya Ispat Nigam Limited",
+      "quantity": "6",
+      "est_value": null,
+      "end_date": "2026-10-24T16:00:00+05:30",
+      "doc_url": "https://bidplus.gem.gov.in/showbidDocument/9885337",
+      "source_url": "https://bidplus.gem.gov.in/showbidDocument/9885337"
+    }
+  ],
+  "docs": {}
+}
