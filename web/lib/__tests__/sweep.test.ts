@@ -41,3 +41,12 @@ describe("applyEvent", () => {
     expect(s.cards.gem.status).toBe("idle");
   });
 });
+
+describe("a sweep that ends early", () => {
+  it("turns still-running cards into errors instead of pulsing forever", () => {
+    const s = [ev("gem", "started", 0, "Searching"), ev("gem", "step", 3, "x"),
+               ev("all", "done", 0, "Lost contact with this sweep. Start a new one.")].reduce(applyEvent, initialSweep());
+    expect(s.cards.gem).toMatchObject({ status: "error", steps: 3, message: "Ended without a result" });
+    expect(s.finished).toBe(true);
+  });
+});

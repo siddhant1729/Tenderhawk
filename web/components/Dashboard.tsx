@@ -31,6 +31,8 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
   const [sweep, dispatch] = useReducer(reducer, undefined, initialSweep);
   const [starting, setStarting] = useState(false);
   const [lost, setLost] = useState(false);
+  const [following, setFollowing] = useState(false);   // a sweep's stream is open (or being opened)
+  const [fallback, setFallback] = useState<boolean | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const loadMatches = useCallback(() => {
@@ -48,7 +50,11 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
     );
   }, [profileId]);
 
-  useEffect(() => { loadProfile(); loadMatches(); }, [loadProfile, loadMatches]);
+  useEffect(() => {
+    loadProfile();
+    loadMatches();
+    api.health().then((h) => setFallback(h.fallback_mode), () => setFallback(null));
+  }, [loadProfile, loadMatches]);
 
   /** Subscribe to a sweep's event stream. Only refs, storage and the EventSource here: state changes
    *  happen in its callbacks, so this is safe to call from an effect (resume) or a click (new sweep). */
@@ -57,6 +63,7 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
     remember(storeKey(profileId), id);
     const es = new EventSource(sweepEventsUrl(id));
     esRef.current = es;
+    es.onopen = () => setFollowing(true);
     es.onmessage = (msg) => {
       let ev: StepEvent;
       try { ev = JSON.parse(msg.data); } catch { return; }
@@ -64,6 +71,7 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
       dispatch({ type: "event", ev });
       if (ev.agent === "all" && ev.type === "done") {
         es.close();
+        setFollowing(false);
         remember(storeKey(profileId), null);
         loadMatches();
       }
@@ -72,6 +80,7 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
     es.onerror = () => {
       if (es.readyState !== EventSource.CLOSED) return setLost(true);
       setLost(false);
+      setFollowing(false);
       remember(storeKey(profileId), null);   // e.g. the sweep's log expired (404): stop trying to resume it
     };
   }, [profileId, loadMatches]);
@@ -83,12 +92,24 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
     return () => esRef.current?.close();
   }, [profileId, follow, followSweepId]);
 
+  function stopWatching() {
+    esRef.current?.close();
+    esRef.current = null;
+    remember(storeKey(profileId), null);
+    setFollowing(false);
+    setLost(false);
+    dispatch({ type: "event", ev: { sweep_id: "", agent: "all", type: "done", step: 0,
+      message: "Stopped watching this sweep. Results it finishes will still appear under Matches.",
+      count: null, direct_url: null, ts: "" } });
+  }
+
   async function startSweep() {
     setStarting(true);
     try {
       const { sweep_id } = await api.startSweep(profileId);
       dispatch({ type: "reset" });
       setLost(false);
+      setFollowing(true);   // keep the button disabled until the stream ends: no double-billed sweeps
       follow(sweep_id);
     } catch (e) {
       dispatch({ type: "reset" });
@@ -108,7 +129,9 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
     );
   }
 
-  const running = !sweep.finished && (Object.values(sweep.cards).some((c) => c.status === "running") || !!sweep.pipeline);
+  const running = following && !sweep.finished;
+  const keywords = profile ? (profile.keywords.length ? profile.keywords : profile.products) : [];
+  const searched = fallback === false ? keywords.slice(0, 1) : keywords;
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3 rounded-2xl bg-ink p-5 text-paper md:flex-row md:items-center md:justify-between">
@@ -121,13 +144,14 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
               {profile.states_served.join(", ") || "—"}
             </p>
             <p className="text-sm text-paper/80">
-              Searching for: <b>{(profile.keywords.length ? profile.keywords : profile.products).join(", ")}</b>
+              Searching for: <b>{searched.join(", ")}</b>
+              {fallback === false && keywords.length > 1 && <> (live sweeps use the first keyword)</>}
             </p>
           </div>
         ) : (
           <p className="text-paper/80">Loading profile…</p>
         )}
-        <button onClick={startSweep} disabled={!profile || running || starting}
+        <button onClick={startSweep} disabled={!profile || starting || (running && !lost)}
                 className="rounded-xl bg-hawk px-6 py-3 text-lg font-bold text-white disabled:opacity-60">
           {running ? "Sweeping…" : starting ? "Starting…" : "Sweep now"}
         </button>
@@ -136,6 +160,11 @@ export default function Dashboard({ profileId, followSweepId }: { profileId: num
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-bold">Live agents</h2>
         {lost && <p role="status" className="text-sm text-warn">Lost the live connection. Reconnecting…</p>}
+        {running && (
+          <button onClick={stopWatching} className="self-start text-sm text-ink-soft underline">
+            Stop watching this sweep
+          </button>
+        )}
         <AgentPanel state={sweep} />
       </section>
 

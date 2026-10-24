@@ -55,7 +55,7 @@ function ReasonCard({ r }: { r: Reason }) {
   );
 }
 
-function AlertBox({ matchId }: { matchId: number }) {
+function AlertBox({ matchId, alertedAt, onSent }: { matchId: number; alertedAt: string | null; onSent: () => void }) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<AlertResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -66,12 +66,17 @@ function AlertBox({ matchId }: { matchId: number }) {
         <h2 className="font-bold">Alert</h2>
         <button disabled={busy} onClick={async () => {
           setBusy(true); setErr(null);
-          try { setRes(await api.alert(matchId)); } catch (e) { setErr(e instanceof Error ? e.message : "Alert failed."); }
+          try {
+            const r = await api.alert(matchId);
+            setRes(r);
+            if (r.sent) onSent();
+          } catch (e) { setErr(e instanceof Error ? e.message : "Alert failed."); }
           setBusy(false);
         }} className="rounded-lg bg-ok px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
           {busy ? "Sending…" : "Send WhatsApp / email alert"}
         </button>
       </div>
+      {alertedAt && !res && <p className="text-sm text-ok">Last alert sent {istDate(alertedAt)}.</p>}
       {err && <p role="alert" className="text-sm text-bad">{err}</p>}
       {res && (
         <>
@@ -137,7 +142,7 @@ export default function MatchView({ matchId }: { matchId: number }) {
         </section>
 
         <aside className="flex flex-col gap-4">
-          <AlertBox matchId={m.id} />
+          <AlertBox matchId={m.id} alertedAt={m.alerted_at} onSent={load} />
           <div className="flex flex-col gap-2 rounded-2xl border border-line bg-card p-4">
             <h2 className="font-bold">Document checklist</h2>
             {m.missing_docs.length ? (

@@ -41,7 +41,13 @@ export function initialSweep(): SweepState {
 /** Fold one §3.3 event into the panel state. Idempotent under a full replay (reconnects replay the log). */
 export function applyEvent(s: SweepState, ev: StepEvent): SweepState {
   if (ev.agent === "all") {
-    if (ev.type === "done") return { ...s, finished: true, summary: ev.message, pipeline: "" };
+    if (ev.type === "done") {
+      // A card still running when the sweep ends never reported back (sweep lost or stopped).
+      const cards = Object.fromEntries(Object.entries(s.cards).map(([k, c]) =>
+        [k, c.status === "running" ? { ...c, status: "error" as const, message: "Ended without a result" } : c],
+      )) as SweepState["cards"];
+      return { ...s, cards, finished: true, summary: ev.message, pipeline: "" };
+    }
     if (ev.type === "error") return { ...s, error: ev.message };
     return { ...s, pipeline: ev.message };
   }
