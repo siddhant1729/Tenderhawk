@@ -6,6 +6,8 @@ from typing import TypeVar
 import anthropic
 from pydantic import BaseModel, ValidationError
 
+import api.config  # noqa: F401  (loads .env before the env reads below, in every entry point)
+
 log = logging.getLogger("api.llm")
 
 LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5-5")
@@ -26,7 +28,8 @@ class LLMError(Exception):
 def _llm() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic(max_retries=3)  # SDK retries 429/5xx/connection errors
+        # SDK retries 429/5xx/connection errors. Bounded so flaky venue wifi can't stall a sweep for minutes.
+        _client = anthropic.AsyncAnthropic(timeout=120.0, max_retries=2)
     return _client
 
 
@@ -55,16 +58,22 @@ async def extract(system: str, text: str, schema: type[T], *, fast: bool = False
             last = f"schema validation failed: {e.errors()[0]['msg']}"
             log.warning("%s (attempt %d)", last, attempt)
             continue
-        except anthropic.BadRequestError as e:  # not retryable: bad request / prompt too long
-            raise LLMError(f"bad request: {e.message}") from e
+        except anthropic.BadRequestError as e:
+            if extra and "fallback" in str(e.message).lower():
+                log.warning("API rejected refusal fallbacks (%s); retrying without them", e.message)
+                extra = {}
+                continue
+            raise LLMError(f"bad request: {e.message}") from e  # not retryable: bad request / prompt too long
         except anthropic.AuthenticationError as e:
             raise LLMError("ANTHROPIC_API_KEY missing or invalid") from e
         except anthropic.APIStatusError as e:
             raise LLMError(f"API error {e.status_code}: {e.message}") from e
         except anthropic.APIConnectionError as e:
             raise LLMError("cannot reach the Anthropic API") from e
-        except TypeError as e:  # raised by the SDK when no credentials are configured at all
-            raise LLMError(f"LLM client not configured: {e}") from e
+        except TypeError as e:
+            if "authentication" not in str(e).lower():
+                raise  # a real bug, don't disguise it
+            raise LLMError("no Anthropic credentials: set ANTHROPIC_API_KEY in .env") from e
 
         if resp.stop_reason == "refusal":
             raise LLMError(f"model declined ({getattr(resp.stop_details, 'category', None)})")

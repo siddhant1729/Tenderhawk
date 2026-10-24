@@ -14,6 +14,7 @@ from agents.schemas import StepEvent
 from api.config import REDIS_URL
 
 TTL = 3600
+IDLE_LIMIT = 900  # seconds without a sweep event before the stream gives up (sweep died with the server)
 _r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
@@ -62,11 +63,19 @@ async def stream(sweep_id: str) -> AsyncIterator[str]:
             if _is_final(js):
                 return
         seen = len(backlog)
+        idle = 0.0
         while True:
             msg = await ps.get_message(ignore_subscribe_messages=True, timeout=15.0)
             if msg is None:
+                idle += 15.0
+                if idle >= IDLE_LIMIT:
+                    lost = StepEvent(sweep_id=sweep_id, agent="all", type="done",
+                                     message="Lost contact with this sweep. Start a new one.")
+                    yield f"data: {lost.model_dump_json()}\n\n"
+                    return
                 yield ": keepalive\n\n"
                 continue
+            idle = 0.0
             n, js = msg["data"].split("|", 1)
             if int(n) <= seen:
                 continue

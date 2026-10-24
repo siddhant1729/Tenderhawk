@@ -18,6 +18,7 @@ def main() -> None:
         else:
             for k, v in data.items():
                 setattr(p, k, v)
+            p.embedding = None  # re-embedded on the next match
         db.commit()
         print(p.id)
 
