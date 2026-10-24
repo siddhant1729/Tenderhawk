@@ -160,11 +160,15 @@ TINYFISH_API_KEY=
 FALLBACK_MODE=false
 DATABASE_URL=postgresql+psycopg://tenderhawk:tenderhawk@localhost:5432/tenderhawk
 REDIS_URL=redis://localhost:6379/0
+GROQ_API_KEY=                # free tier; used for the eligibility parser when ANTHROPIC_API_KEY is empty
 ANTHROPIC_API_KEY=
 LLM_MODEL=claude-sonnet-5-5
 LLM_MODEL_FAST=claude-haiku-5-5
 LLM_EFFORT=medium            # effort for the eligibility parser
 LLM_FALLBACKS=true           # server-side refusal fallback (Claude API only)
+LLM_PROVIDER=                # anthropic | groq; empty = Claude if its key is set, else Groq
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_MAX_DOC_CHARS=14000     # free tier is 8k tokens/min; GeM eligibility sits in the first pages
 LIVE_MAX_KEYWORDS=1          # profile keywords per live sweep; each one is a billed Agent run per portal
 SCHEDULER_ENABLED=true       # daily corrigenda job inside the API process (APScheduler)
 CORRIGENDA_HOUR=7            # IST hour for the daily corrigenda job
@@ -186,7 +190,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ### 4.1 Models (decided)
 | Use | Model (env var) | Notes |
 |---|---|---|
-| Eligibility parser | `claude-sonnet-5-5` (`LLM_MODEL`) | Tool-use / JSON-schema structured output generated from the Pydantic `Eligibility` model (§3.4); every criterion carries `source_clause` |
+| Eligibility parser | `claude-sonnet-5-5` (`LLM_MODEL`) when `ANTHROPIC_API_KEY` is set, otherwise Groq free tier `openai/gpt-oss-120b` (`GROQ_MODEL`) | JSON-schema structured output generated from the Pydantic `Eligibility` model (§3.4), strict mode on Groq; every criterion carries `source_clause`. On Groq a sweep parses one document at a time (8k tokens/min) and sends the first `GROQ_MAX_DOC_CHARS` characters |
 | Light tasks (title normalising, alert copy) | `claude-haiku-5-5` (`LLM_MODEL_FAST`) | |
 | Embeddings | `text-embedding-3-small` (`EMBEDDING_MODEL`, `EMBEDDING_DIM=1536`) | Tender = `title + item + buyer`; profile = `products + HSN descriptions`; cosine via pgvector |
 
@@ -252,7 +256,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ---
 
 ## 7. Open decisions (resolve in the first hour)
-- [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). See §4.1.
+- [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). **We have no Anthropic or OpenAI key**, so the parser runs on Groq's free tier (`openai/gpt-oss-120b`) and ranking uses keyword overlap. See §4.1.
 - [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
 - [x] **Demo category keyword(s)** for Ramesh → "storage rack", "steel rack", "steel almirah" (in `delivery/seed/ramesh.json`). "storage rack" comes first because a live GeM run for "steel rack" found no rack bids (§1). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three, so record `gem_storage_rack.json` first.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
@@ -278,12 +282,12 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 ### What's left (in priority order)
 | # | Task | Owner | Blocked on |
 |---|---|---|---|
-| 1 | Get `ANTHROPIC_API_KEY` into `.env` (only `TINYFISH_API_KEY` is set) | Siddhant | key |
+| 1 | ~~LLM key~~ ✅ done: Groq free tier (`GROQ_API_KEY`) replaces Claude; tested on 2 real GeM bid PDFs, every criterion found with a verbatim clause, ~7 s each | Siddhant | — |
 | 2 | Record real fixtures: `gem_storage_rack.json` first, then CPPP + Haryana, with doc texts and parses (`delivery.build_fixture attach`) and `check` = "fixture OK". The current `gem_steel_rack.json` is unusable (unrelated, closed bids) | Vandan + Siddhant | 1 |
 | 3 | Run CPPP + Haryana live at least once (never run live yet); confirm the 30-step / 300 s cap ends cleanly | Siddhant | — |
-| 4 | Run the eligibility parser on 5 real GeM docs, check the clauses | Harsh | 1, 2 |
+| 4 | Run the eligibility parser on 3 more real GeM docs (2 of 5 done), check the clauses | Harsh | 2 |
 | 5 | Twilio sandbox: `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | keys, phone |
-| 6 | Optional: `OPENAI_API_KEY` for real embeddings (keyword-overlap ranking works without it); `SMTP_URL` for email (first thing to cut) | Harsh / Vandan | keys |
+| 6 | Optional: `SMTP_URL` for email (first thing to cut). No `OPENAI_API_KEY`: ranking stays keyword overlap, which is enough for the demo | Vandan | key |
 | 7 | Optional: corrigenda fixture `{portal}_corrigenda.json` so the 4th card shows a result offline | Siddhant | 2 |
 | 8 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | 2, 5 |
 | 9 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | 8 |
@@ -301,11 +305,11 @@ Open code issue (not blocking the demo): Fetch → GeM bid docs returns `proxy_e
 | H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). **Fetch → GeM bid docs returns `proxy_error`**, so no doc text yet (§1). CPPP + Haryana not run live. Runs capped at 30 steps / 300 s (untested in a run). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
-| H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | built and tested against a stub API; needs `ANTHROPIC_API_KEY` for the "5 real GeM docs" check |
+| H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Claude or Groq (free tier). 2 of 5 real GeM docs parsed on Groq with verbatim clauses (storage rack bid GEM/2026/B/7509529, IIM Indore GEM/2025/B/6356290) |
 | H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking until `OPENAI_API_KEY` is set; clause excerpts for highlighting |
 | H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
 | H10–16 | Matches list UI | Aditya (built by Harsh) | ✅ | verdict chips with text labels, value, deadline countdown, fit; low-relevance folded |
-| H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | 🟡 | Tooling done: `python -m delivery.build_fixture attach/check`. Recording needs `TINYFISH_API_KEY` (live runs) and `ANTHROPIC_API_KEY` (parses) |
+| H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | 🟡 | Tooling done: `python -m delivery.build_fixture attach/check`. Recording needs `TINYFISH_API_KEY` (live runs, set) and `GROQ_API_KEY` or `ANTHROPIC_API_KEY` (parses, Groq set) |
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan (built by Harsh) | 🟡 | `delivery/alerts.py`: Twilio REST + SMTP, endpoint, auto-alert after sweeps; tested with stubs. Needs `TWILIO_*` + stage phone joined to the sandbox to send for real |
 | H16–21 | Match detail page with highlighted clause | Aditya (built by Harsh) | ✅ | clause highlighted in the bid text, checklist, corrigenda, alert button with message preview |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | ✅ | "Open on portal" cards, API-down / DB-down banners, reconnect notice, 404 pages |
@@ -321,7 +325,7 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 61 tests, no keys needed (2 alert tests need Postgres running)
+python -m pytest -q tests         # 65 tests, no keys needed (2 alert tests need Postgres running)
 cd web && npm test                # 14 tests
 ```
 

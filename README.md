@@ -89,7 +89,7 @@ This is a 24-hour hackathon build. What exists right now:
 - [x] **Dashboard** (`web/`): Next.js 16 — profile form, live agents panel (4 cards over SSE), matches with verdict chips, match detail with the source clause highlighted in the bid text, alert button
 - [x] **Alerts** (`delivery/alerts.py`): WhatsApp via the Twilio sandbox and email via SMTP; `POST /matches/{id}/alert`; new eligible matches are alerted after each sweep
 - [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
-- [ ] **Demo-ready fixtures**: the first GeM recording holds unrelated, closed bids. Re-record "storage rack" and attach bid documents (see below); needs `TINYFISH_API_KEY` and `ANTHROPIC_API_KEY`
+- [ ] **Demo-ready fixtures**: the first GeM recording holds unrelated, closed bids. Re-record "storage rack" and attach bid documents (see below); needs `TINYFISH_API_KEY` and `GROQ_API_KEY` (or `ANTHROPIC_API_KEY`)
 - [ ] **Live document text for GeM**: TinyFish Fetch gets `proxy_error` on GeM bid PDFs, so live sweeps have no document text yet (saved PDFs work)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
@@ -201,6 +201,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `TINYFISH_API_KEY` | TinyFish Agent / Fetch / Search |
 | `FALLBACK_MODE` | `true` replays `delivery/fixtures/*.json` instead of live runs |
 | `ANTHROPIC_API_KEY`, `LLM_MODEL`, `LLM_MODEL_FAST` | Eligibility parser (`claude-sonnet-5-5`) and light tasks (`claude-haiku-5-5`) |
+| `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_MAX_DOC_CHARS`, `LLM_PROVIDER` | Free alternative: used for the parser when `ANTHROPIC_API_KEY` is empty (`openai/gpt-oss-120b`, strict JSON schema, one document at a time) |
 | `OPENAI_API_KEY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM` | `text-embedding-3-small`, 1536 dims |
 | `LLM_EFFORT`, `LLM_FALLBACKS` | Parser effort level; refusal fallback |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
