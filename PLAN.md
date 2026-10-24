@@ -82,6 +82,9 @@ async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Se
  "count": 12, "direct_url": null, "ts": "2026-10-24T14:02:11+05:30"}
 ```
 `count` is set on `result` (bids found). `direct_url` is set on `error`. After all agents finish, one final event with `agent: "all"` and `type: "done"`.
+- Each portal card gets exactly one `started`, then `step`s, then one `result` or `error`, even though a portal is searched once per profile keyword (per-keyword messages are prefixed `[keyword]`). A portal ends in `error` (with `direct_url`) only when it found no bids and something failed (captcha, crash, no fixture).
+- Pipeline progress after the portals finish is sent as `agent: "all"`, `type: "step"` (e.g. "Reading 10 bid documents", "Matching tenders against your profile"). The `done` message carries the summary.
+- A client that connects late (or reconnects) gets the full event log replayed first. If a sweep goes silent for 15 min (server restarted mid-sweep), the stream ends with a `done` saying so.
 
 ### 3.4 Eligibility JSON (stored in `tenders.eligibility`)
 ```json
@@ -122,6 +125,11 @@ Hard rules first, then rank by cosine similarity (profile embedding vs tender em
 - **CHECK_DOCS** if a criterion needs proof we can't verify: past experience, a certification not on the profile, or an unparseable value.
 - **ELIGIBLE** otherwise.
 - Every reason carries its `source_clause`. Example: `"Turnover met (₹1.2 Cr ≥ ₹50 L)"`, `"MSE EMD exemption applies"`.
+- Also CHECK_DOCS: no parse at all, or a parse that found no criteria (the fetched page may not be the bid document). Never show green without a clause.
+- Past experience is never a hard fail: years in business ≠ years of past supply, so it is always "needs proof".
+- MSE (Udyam) profiles skip turnover/experience when the bid's MSE relaxation is Yes, and skip EMD when the MSE EMD exemption applies.
+- State names match loosely ("State of Haryana" = "Haryana", "UP" = "Uttar Pradesh").
+- Tenders whose product fit is below a threshold are flagged `relevant: false` and listed last.
 
 ### 3.7 Fixture format (`delivery/fixtures/{portal}_{category}.json`)
 ```json
@@ -129,8 +137,10 @@ Hard rules first, then rank by cosine similarity (profile embedding vs tender em
  "recorded_at": "...", "run_id": "...",
  "steps": [{"step": 1, "message": "..."}],
  "result": [/* BidListing[] */],
- "docs": {"<doc_url>": "<fetched text>"}}
+ "docs": {"<doc_url>": "<fetched text>"},
+ "eligibility": {"<doc_url>": {/* §3.4 JSON */}}}
 ```
+`eligibility` holds recorded parses, so a `FALLBACK_MODE` demo needs neither the LLM nor the network.
 
 ---
 
@@ -143,6 +153,9 @@ REDIS_URL=redis://localhost:6379/0
 ANTHROPIC_API_KEY=
 LLM_MODEL=claude-sonnet-5-5
 LLM_MODEL_FAST=claude-haiku-5-5
+LLM_EFFORT=medium            # effort for the eligibility parser
+LLM_FALLBACKS=true           # server-side refusal fallback (Claude API only)
+LIVE_MAX_KEYWORDS=1          # profile keywords per live sweep; each one is a billed Agent run per portal
 OPENAI_API_KEY=
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIM=1536
@@ -226,9 +239,9 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ## 7. Open decisions (resolve in the first hour)
 - [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). See §4.1.
 - [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
-- [ ] **Demo category keyword(s)** for Ramesh: "steel rack", "steel almirah", "fabricated structure"?
+- [x] **Demo category keyword(s)** for Ramesh → "steel rack", "steel almirah", "fabricated structure" (in `delivery/seed/ramesh.json`). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
-- [ ] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379`
+- [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379` (API, Postgres and Redis in use; web once it exists)
 
 ## 8. Risks & fallbacks
 | Risk | Fallback |
@@ -238,3 +251,39 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | LLM misparses a document | The verdict falls back to CHECK_DOCS with "Couldn't verify, see clause" |
 | Agent returns malformed JSON | `output_schema` plus one retry, then skip |
 | Running out of time | Cut order: email → corrigenda job → Haryana portal. **Never cut:** fallback mode, the clause highlight, WhatsApp |
+
+## 9. Progress (updated 2026-10-24)
+
+Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
+
+| Block | Task | Owner | Status | Notes |
+|---|---|---|---|---|
+| H0–4 | TinyFish wrapper, schemas, goals, CLI | Siddhant | ✅ | merged to `main` |
+| H0–4 | First live GeM fixture | Siddhant | 🟡 | `gem_steel_rack.json` exists, but its 10 bids are unrelated and already closed, with no docs/parses. Re-record. |
+| H0–4 | FastAPI, models, Alembic, `/health`, `/profiles` | Harsh | ✅ | `feat/backend` |
+| H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | built on `feat/backend` (`python -m delivery.seed`) |
+| H0–4 | Next.js scaffold + profile form | Aditya | ⬜ | |
+| H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
+| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | code exists; live runs need `TINYFISH_API_KEY`; unknown whether Fetch returns text for GeM PDFs |
+| H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
+| H4–10 | Live agents panel (SSE) | Aditya | ⬜ | |
+| H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | built and tested against a stub API; needs `ANTHROPIC_API_KEY` for the "5 real GeM docs" check |
+| H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking until `OPENAI_API_KEY` is set; clause excerpts for highlighting |
+| H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant | ⬜ | `search_corrigenda` exists in `agents/`, not yet scheduled or wired to SSE |
+| H10–16 | Matches list UI | Aditya | ⬜ | |
+| H10–16 | Fixtures GeM/CPPP/Haryana × "steel racks" + doc texts + parses | Vandan | ⬜ | blocks the wifi-off demo |
+| H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan | ⬜ | |
+| H16–21 | Match detail page with highlighted clause | Aditya | ⬜ | API ready: `GET /matches/{id}` returns `reasons[].excerpt` with highlight offsets |
+| H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | 🟡 | backend side done; UI side pending |
+| H21–24 | README, dry runs, tag `v0.1-demo` | All | ⬜ | |
+
+**Backend run steps (current):**
+```
+cp .env.example .env              # fill keys
+docker compose up -d              # Postgres + Redis (skip redis if one already runs on :6379)
+pip install -r requirements.txt
+alembic upgrade head
+python -m delivery.seed           # prints Ramesh's profile id
+uvicorn api.main:app --reload     # :8000
+python -m pytest -q tests         # 30 tests, no keys needed
+```
