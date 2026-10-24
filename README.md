@@ -85,7 +85,7 @@ flowchart LR
 This is a 24-hour hackathon build. What exists right now:
 
 - [x] **Agents layer** (`agents/`): TinyFish wrapper, schemas, goals for GeM / CPPP / Haryana, CLI, fixture recorder, offline replay
-- [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, Claude eligibility parser, matcher with embeddings and clause excerpts, daily corrigenda job — 42 tests
+- [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, Claude eligibility parser, matcher with embeddings and clause excerpts, daily corrigenda job (61 backend tests, 14 dashboard tests)
 - [x] **Dashboard** (`web/`): Next.js 16 — profile form, live agents panel (4 cards over SSE), matches with verdict chips, match detail with the source clause highlighted in the bid text, alert button
 - [x] **Alerts** (`delivery/alerts.py`): WhatsApp via the Twilio sandbox and email via SMTP; `POST /matches/{id}/alert`; new eligible matches are alerted after each sweep
 - [x] **Infra** (`delivery/`): Docker Compose for Postgres + pgvector and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
@@ -133,6 +133,10 @@ cd web && npm install && npm run dev      # http://localhost:3000 (talks to NEXT
 Or run everything in Docker: `docker compose --profile app up -d --build` starts Postgres, Redis, the API on :8000
 and the dashboard on :3000 (move a busy host port with e.g. `REDIS_PORT=6380`). A single-page fallback console is
 also served by the API at `/demo`.
+
+Before a demo, run through the checklist at the end of [`PLAN.md`](PLAN.md): fixtures pass
+`python -m delivery.build_fixture check`, the stage phone has joined the Twilio sandbox in the last 24 h, and
+`python -m delivery.alerts reset` clears rehearsal alerts so the on-stage sweep alerts again.
 
 | Method | Path | What it does |
 |---|---|---|
@@ -205,7 +209,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `TWILIO_*`, `ALERT_WHATSAPP_TO` | WhatsApp alerts (Twilio sandbox; `ALERT_WHATSAPP_TO` = the stage phone) |
 | `SMTP_URL`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | Email alerts |
 | `AUTO_ALERT` | Alert new relevant ELIGIBLE matches after each sweep (max 3 per sweep) |
-| `NEXT_PUBLIC_API_URL` | API address for the dashboard (`web/.env.local`) |
+| `NEXT_PUBLIC_API_URL` | API address for the dashboard (copy `web/.env.example` to `web/.env.local`) |
 
 See [`.env.example`](.env.example). Never commit `.env`.
 

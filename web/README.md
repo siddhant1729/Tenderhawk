@@ -8,7 +8,7 @@ cp .env.example .env.local        # NEXT_PUBLIC_API_URL, default http://localhos
 npm install
 npm run dev                       # http://localhost:3000
 npm test                          # helper + sweep-state tests (vitest)
-npm run lint && npm run build     # what CI would run
+npm run lint && npm run typecheck && npm run build     # what CI would run
 ```
 
 Pages:
@@ -21,3 +21,4 @@ Pages:
 | `/matches/{id}` | Verdict, reasons with the clause highlighted in the bid text, document checklist, corrigenda, alert button |
 
 Fonts are system fonts, so the dashboard renders with no network in fallback mode.
+In Docker it is built by `docker compose --profile app up -d --build` from the repo root (`web/Dockerfile`).

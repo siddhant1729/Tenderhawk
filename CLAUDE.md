@@ -69,7 +69,9 @@ agents/     TinyFish client wrapper, portal goals, schemas, SSE step events   (S
 api/        FastAPI app, models, migrations, eligibility parser, matcher      (Harsh)
 web/        Next.js dashboard: profile form, live agents panel, matches, detail (Aditya)
 delivery/   Twilio/email alerts, seed profiles, fixtures, fallback mode, docker (Vandan)
+tests/      pytest suite (no API keys needed); web/ has its own vitest suite
 ```
+Current status and the pre-demo checklist live in `PLAN.md` §9.
 
 ## Core data model (starting point)
 - `Tender`: id, portal, bid_no (unique with portal), title, item, ministry/buyer, quantity, est_value, end_date, doc_url, doc_text, eligibility (JSONB), embedding, corrigenda (JSONB), created_at, updated_at

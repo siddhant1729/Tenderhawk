@@ -30,7 +30,7 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 | GeM drops connections from non-Indian IPs (agent saw `ERR_EMPTY_RESPONSE`, "site down") | Agent runs use `ProxyConfig(country_code="IN")` |
 | `output_schema` rejects `description` keys (HTTP 400) | Field hints live in the goal text (`agents/goals.py`) |
 | GeM's search for "steel rack" returns no rack bids; buyers write "storage rack" / "Metal Shelving Racks" | Keyword choice decides whether a live sweep finds anything (see §7); goals match on items/title, never on buyer names |
-| Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option), but Search API results include GeM `showbidDocument` text | No doc text for GeM yet; try Search for doc text, or hand-save 5 bid PDFs into fixtures |
+| Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option), but Search API results include GeM `showbidDocument` text | No live doc text for GeM yet. For fixtures: hand-save bid PDFs and run `python -m delivery.build_fixture attach` (PDF → text → parse). Lasting fix (e.g. via Search) still open in `agents/` |
 | One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 30 steps / 300 s (`AGENT_LIMITS`); keep goals cheap |
 
 ---
@@ -222,7 +222,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | Harsh | Matcher (§3.6) + pgvector embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Ramesh gets ≥1 of each verdict colour |
 | Siddhant | `search_corrigenda` + daily job (APScheduler); corrigenda agent card in SSE | A corrigendum shows on a match |
 | Aditya | Matches list (verdict chips green/amber/red, value, deadline countdown) | Renders real API data |
-| Vandan | Record fixtures: GeM, CPPP, Haryana × "steel racks" + doc texts | Full demo runs with wifi off |
+| Vandan | Record fixtures: GeM, CPPP, Haryana × "storage rack" + doc texts + parses | Full demo runs with wifi off |
 
 ### H16–21 · Demo polish → tag `v0.1-demo`
 | Who | Task | Done when |
@@ -254,20 +254,20 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ## 7. Open decisions (resolve in the first hour)
 - [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). See §4.1.
 - [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
-- [x] **Demo category keyword(s)** for Ramesh → "steel rack", "steel almirah", "fabricated structure" (in `delivery/seed/ramesh.json`). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three. ⚠️ **Open issue:** a live GeM run for "steel rack" found no rack bids (§1); real GeM rack bids are titled "storage rack" / "Metal Shelving Racks". Consider making "storage rack" the first keyword in `ramesh.json` before recording fixtures.
+- [x] **Demo category keyword(s)** for Ramesh → "storage rack", "steel rack", "steel almirah" (in `delivery/seed/ramesh.json`). "storage rack" comes first because a live GeM run for "steel rack" found no rack bids (§1). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three, so record `gem_storage_rack.json` first.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
-- [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379` (API, Postgres and Redis in use; web once it exists)
+- [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379`. Docker host ports can be moved with `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `REDIS_PORT`.
 
 ## 8. Risks & fallbacks
 | Risk | Fallback |
 |---|---|
 | Portal slow, down or captcha'd | Fixture replay (`FALLBACK_MODE`) and a direct link to the portal |
-| Venue wifi dies | Everything local in Docker, plus fixtures; the WhatsApp alert needs a phone hotspot |
-| LLM misparses a document | The verdict falls back to CHECK_DOCS with "Couldn't verify, see clause" |
+| Venue wifi dies | Everything local in Docker (`docker compose --profile app up -d`), plus fixtures with recorded parses (`FALLBACK_MODE=true`); the WhatsApp alert needs a phone hotspot |
+| LLM misparses a document | The verdict falls back to CHECK_DOCS ("Couldn't read eligibility from the bid document"); a parse with no clauses is CHECK_DOCS too |
 | Agent returns malformed JSON | `output_schema` plus one retry, then skip |
 | Running out of time | Cut order: email → corrigenda job → Haryana portal. **Never cut:** fallback mode, the clause highlight, WhatsApp |
 
-## 9. Progress (updated 2026-10-24)
+## 9. Progress (updated 2026-10-25)
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
@@ -293,6 +293,8 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 | H16–21 | Match detail page with highlighted clause | Aditya (built by Harsh) | ✅ | clause highlighted in the bid text, checklist, corrigenda, alert button with message preview |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | ✅ | "Open on portal" cards, API-down / DB-down banners, reconnect notice, 404 pages |
 | H21–24 | README, dry runs, tag `v0.1-demo` | All | 🟡 | README current. Dry runs and the tag wait for real fixtures and the Twilio sandbox (needs keys) |
+
+Not built, by choice: OCR for scanned bid PDFs (CLAUDE.md stack). Every GeM bid PDF tested so far has a text layer; `build_fixture attach` reports a document with no text instead of guessing.
 
 **Backend run steps (current):**
 ```
