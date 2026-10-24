@@ -4,7 +4,10 @@
     after every sweep          -> auto_alert(profile_id): new, relevant, open ELIGIBLE matches
 
 A channel without credentials reports "not_configured" and the message preview is still returned,
-so the demo can show what would be sent. alerted_at is set only when a channel actually sent.
+so the demo can show what would be sent. alerted_at is set only when a channel sent and no configured
+channel failed. "sent" means Twilio accepted the message: the sandbox still drops it later if the phone
+hasn't messaged the sandbox number in the last 24 h (rehearsal checklist in PLAN.md).
+Before a demo: `python -m delivery.alerts reset` so the live sweep alerts again.
 """
 import asyncio
 import logging
@@ -30,7 +33,10 @@ VERDICT_LABEL = {"ELIGIBLE": "Eligible", "CHECK_DOCS": "Check docs", "NOT_ELIGIB
 VERDICT_ICON = {"ELIGIBLE": "🟢", "CHECK_DOCS": "🟠", "NOT_ELIGIBLE": "🔴"}
 REASON_ICON = {"ok": "✅", "warn": "⚠️", "fail": "❌", "info": "ℹ️"}
 WHATSAPP_MAX = 1500        # Twilio caps a WhatsApp body at 1600 characters
-AUTO_ALERT_MAX = 5         # per sweep, so a big sweep can't flood the phone
+DOCS_MAX = 400             # the documents line, so the reasons and the link fit
+AUTO_ALERT_MAX = 3         # per sweep, so a big sweep can't flood the stage phone
+SEND_TIMEOUT = 10.0        # seconds per channel; alerts must not hold up a sweep on bad wifi
+AUTO_ALERT_BUDGET = 20.0   # seconds for all auto-alerts of one sweep
 
 
 def _env(name: str, default: str = "") -> str:
@@ -58,14 +64,17 @@ def format_message(m: dict) -> str:
     lines = [f"{REASON_ICON.get(r['kind'], '•')} {r['text']}" for r in m["reasons"]]
     tail = []
     if m["missing_docs"]:
-        tail.append("📄 Documents: " + "; ".join(m["missing_docs"]))
-    tail.append(f"🔗 {t['source_url']}")
+        docs = "📄 Documents: " + "; ".join(m["missing_docs"])
+        tail.append(docs if len(docs) <= DOCS_MAX else docs[:DOCS_MAX - 1].rsplit("; ", 1)[0] + "; …")
+    link = f"🔗 {t['source_url']}"
 
-    body = "\n".join(head + lines + tail)
-    while len(body) > WHATSAPP_MAX and lines:          # drop reasons from the end, keep head and link
+    body = "\n".join(head + lines + tail + [link])
+    while len(body) > WHATSAPP_MAX and lines:          # drop reasons from the end; header and link always stay
         lines.pop()
-        body = "\n".join(head + lines + ["…"] + tail)
-    return body[:WHATSAPP_MAX]
+        body = "\n".join(head + lines + ["…"] + tail + [link])
+    if len(body) > WHATSAPP_MAX:                       # pathological titles: trim the text, never the link
+        body = body[:WHATSAPP_MAX - len(link) - 2] + "…\n" + link
+    return body
 
 
 # ---- channels --------------------------------------------------------------------------------
@@ -81,7 +90,7 @@ async def send_whatsapp(to: str, body: str, *, transport: httpx.AsyncBaseTranspo
         return "not_configured"
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
     try:
-        async with httpx.AsyncClient(timeout=20.0, transport=transport) as c:
+        async with httpx.AsyncClient(timeout=SEND_TIMEOUT, transport=transport) as c:
             r = await c.post(url, auth=(sid, token),
                              data={"From": _whatsapp_number(sender), "To": _whatsapp_number(to), "Body": body})
     except httpx.HTTPError as e:
@@ -113,9 +122,9 @@ def _smtp_send(to: str, subject: str, body: str) -> str:
     msg.set_content(body.replace("*", ""))
     try:
         if u.scheme == "smtps":
-            smtp = smtplib.SMTP_SSL(u.hostname, u.port or 465, timeout=20, context=ssl.create_default_context())
+            smtp = smtplib.SMTP_SSL(u.hostname, u.port or 465, timeout=SEND_TIMEOUT, context=ssl.create_default_context())
         else:
-            smtp = smtplib.SMTP(u.hostname, u.port or 587, timeout=20)
+            smtp = smtplib.SMTP(u.hostname, u.port or 587, timeout=SEND_TIMEOUT)
         with smtp:
             if u.scheme == "smtp":
                 smtp.starttls(context=ssl.create_default_context())
@@ -166,8 +175,11 @@ async def alert_match(match_id: int) -> dict | None:
     mail_to = _env("ALERT_EMAIL_TO") or (m["profile"]["email"] or "")
     subject = f"TenderHawk: {VERDICT_LABEL.get(m['verdict'], m['verdict'])} · {m['tender']['title'][:80]}"
     whatsapp, email = await asyncio.gather(send_whatsapp(wa_to, body), send_email(mail_to, subject, body))
-    sent = "sent" in (whatsapp, email)
-    if sent:
+    statuses = (whatsapp, email)
+    sent = "sent" in statuses
+    # A configured channel that failed (e.g. the phone left the sandbox) keeps the match pending, so the
+    # next sweep retries it; "not_configured" channels don't block.
+    if sent and not any(s.startswith("failed") for s in statuses):
         await asyncio.to_thread(_mark_alerted, match_id)
     return {"match_id": match_id, "sent": sent, "channels": {"whatsapp": whatsapp, "email": email},
             "preview": body}
@@ -187,11 +199,39 @@ async def auto_alert(profile_id: int) -> int:
     """Alert new ELIGIBLE matches that were never alerted. Returns how many were sent."""
     if not auto_alert_enabled():
         return 0
-    sent = 0
-    for mid in await asyncio.to_thread(_pending_eligible, profile_id):
+
+    async def one(mid: int) -> bool:
         try:
             res = await alert_match(mid)
-            sent += bool(res and res["sent"])
+            return bool(res and res["sent"])
         except Exception as e:  # an alert must never break a sweep
             log.warning("auto-alert failed for match %s: %r", mid, e)
-    return sent
+            return False
+
+    ids = await asyncio.to_thread(_pending_eligible, profile_id)
+    if not ids:
+        return 0
+    try:
+        return sum(await asyncio.wait_for(asyncio.gather(*(one(m) for m in ids)), AUTO_ALERT_BUDGET))
+    except TimeoutError:
+        log.warning("auto-alerts for profile %s ran past %ss; the sweep goes on", profile_id, AUTO_ALERT_BUDGET)
+        return 0
+
+
+def reset_alerts(profile_id: int | None = None) -> int:
+    """Mark matches as not alerted (before a demo, so the live sweep sends the alert again)."""
+    from sqlalchemy import update
+    with SessionLocal() as db:
+        q = update(Match).values(alerted_at=None)
+        if profile_id is not None:
+            q = q.where(Match.profile_id == profile_id)
+        n = db.execute(q).rowcount
+        db.commit()
+        return n
+
+
+if __name__ == "__main__":
+    import sys
+    if sys.argv[1:2] != ["reset"]:
+        sys.exit("usage: python -m delivery.alerts reset [profile_id]")
+    print(f"reset {reset_alerts(int(sys.argv[2]) if len(sys.argv) > 2 else None)} match(es)")

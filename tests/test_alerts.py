@@ -167,3 +167,49 @@ def test_alert_endpoint_404():
     from fastapi.testclient import TestClient
     from api.main import app
     assert TestClient(app).post("/matches/987654321/alert").status_code == 404
+
+
+def test_failed_whatsapp_keeps_match_pending_for_retry(monkeypatch):
+    marked = []
+    monkeypatch.setattr(alerts, "_load", lambda mid: MATCH)
+    monkeypatch.setattr(alerts, "_mark_alerted", marked.append)
+
+    async def wa(to, body):
+        return "failed: not joined to sandbox"
+
+    async def mail(to, subject, body):
+        return "sent"
+
+    monkeypatch.setattr(alerts, "send_whatsapp", wa)
+    monkeypatch.setattr(alerts, "send_email", mail)
+    res = asyncio.run(alerts.alert_match(7))
+    assert res["sent"] and marked == []          # email went, but WhatsApp will be retried next sweep
+
+
+def test_huge_checklist_never_cuts_the_link():
+    m = {**MATCH, "missing_docs": ["Additional Doc (Requested in ATC) " * 3] * 60, "title": "x" * 1400}
+    m["tender"] = {**MATCH["tender"], "title": "T" * 1400}
+    body = alerts.format_message(m)
+    assert len(body) <= alerts.WHATSAPP_MAX and body.endswith("🔗 https://bidplus.gem.gov.in/x")
+
+
+def test_auto_alerts_run_in_parallel_within_a_budget(monkeypatch):
+    monkeypatch.setattr(alerts, "_pending_eligible", lambda pid: [1, 2, 3])
+    monkeypatch.setattr(alerts, "AUTO_ALERT_BUDGET", 0.3)
+
+    async def slow(mid):
+        await asyncio.sleep(0.2)
+        return {"sent": True}
+
+    monkeypatch.setattr(alerts, "alert_match", slow)
+    assert asyncio.run(alerts.auto_alert(1)) == 3          # parallel: 0.2 s total, inside the budget
+
+    async def hung(mid):
+        await asyncio.sleep(5)
+
+    monkeypatch.setattr(alerts, "alert_match", hung)
+    assert asyncio.run(alerts.auto_alert(1)) == 0          # gives up at the budget instead of hanging
+
+
+def test_reset_alerts_for_unknown_profile_touches_nothing():
+    assert alerts.reset_alerts(987654321) == 0
