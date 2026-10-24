@@ -289,6 +289,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 3: timezone audit. Storage was already tz-aware (`timestamptz`); added `as_ist()` so a naive datetime means IST, never the server's zone (matcher no longer crashes on one; alert "closes" text and corrigenda time-of-day no longer depend on `TZ`); `/demo` dates pinned to Asia/Kolkata. Tests: GeM "24-10-2026 2:00 PM IST" → 14:00 IST; a 15:00 IST deadline is open at 14:59 and passed at 15:01 with the server in UTC / Los Angeles / Kolkata.
 - Phase 4: parse cache (text + parse reused by `doc_url` from the DB, then fixtures, in live and fallback mode); `all/done` fires before new documents are read (`pending`), background reads publish `all/update` per re-matched tender and end with `all/settled`; dashboard and `/demo` keep listening and reload matches. Groq 429 retried by the SDK (`LLM_MAX_RETRIES`), persistent 429/5xx/timeouts → CHECK_DOCS, tested.
 - Phase 5: real fixtures. `gem_storage_rack` (live run, 28 steps, 1 bid, PDF via direct download, parsed: ELIGIBLE, no EMD/turnover criteria); `cppp_storage_rack` (3 real storage-rack bids, ₹9.3–39.5 L; CPPP only gives expiring session links, so no documents: CHECK_DOCS + stable portal link); `haryana_storage_rack` (blocked by captcha after 26 steps: replays as the captcha card with the portal link); `gem_steel_almirah` (8 bids; the agent guessed `/showbiddata/` links (404), no documents: CHECK_DOCS). Old `gem_steel_rack` retired. Verdict mix from real data: ELIGIBLE 1, CHECK_DOCS 11, **NOT_ELIGIBLE 0** (not forced). Found: TinyFish's 300 s cap is soft (runs took 352 s and 471 s), so `agents/` now stops waiting at `AGENT_TIMEOUT` (330 s) → clean error card; blocked runs are recorded and replayed; GeM goal demands the exact `showbidDocument` href and guessed links are dropped.
+- Phase 6: `python -m delivery.seed --reset` (tenders, matches + alert flags, `sweep:*` Redis keys; reseeds Ramesh) and `scripts/preflight.py` (11 checks, PASS/WARN/FAIL, exit 1 on FAIL; TinyFish wallet read via the SDK: $15.18 ≈ 948 agent steps). Today it reports NOT READY: Docker down, Twilio unset, NOT_ELIGIBLE missing from the verdict mix.
 
 ### Left to implement (code)
 | # | Task | Owner | Notes |
@@ -346,9 +347,8 @@ cd web && npm test                # 14 tests
 ```
 
 **Before every demo run (checklist):**
-1. `docker compose up -d` (or the app profile), `alembic upgrade head`, `python -m delivery.seed`.
-2. `python -m delivery.build_fixture check gem "storage rack"` (and cppp, haryana) prints "fixture OK" — bids still open, documents and parses recorded.
-3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone.
-4. `python -m delivery.alerts reset` so the on-stage sweep sends the alert again (rehearsals mark matches as alerted).
-5. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
+1. `docker compose up -d` (or the app profile), `alembic upgrade head`, then **`python -m delivery.seed --reset`**: wipes tenders, matches (and their alert flags) and sweep logs, reseeds Ramesh, prints his id. The on-stage sweep then starts from nothing and alerts again.
+2. **`python scripts/preflight.py`** prints PASS / WARN / FAIL for: docker services, alembic at head, `/health`, web reachable + CORS for the web origin, `FALLBACK_MODE` / `DEMO_NOW`, every fixture "fixture OK", verdict mix, Twilio creds + `ALERT_WHATSAPP_TO`, TinyFish key + wallet, Groq key + models, ports. It must end in `READY`.
+3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone. (Preflight can't see this.)
+4. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
 

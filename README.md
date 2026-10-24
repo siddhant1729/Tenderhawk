@@ -111,7 +111,7 @@ cp .env.example .env        # then fill in the keys
 ```bash
 docker compose up -d              # Postgres 16 + pgvector, Redis
 alembic upgrade head
-python -m delivery.seed           # creates Ramesh's profile, prints its id
+python -m delivery.seed           # creates Ramesh's profile, prints its id (--reset: clean demo state first)
 uvicorn api.main:app --reload     # http://localhost:8000
 ```
 
@@ -136,7 +136,7 @@ also served by the API at `/demo`.
 
 Before a demo, run through the checklist at the end of [`PLAN.md`](PLAN.md): fixtures pass
 `python -m delivery.build_fixture check`, the stage phone has joined the Twilio sandbox in the last 24 h, and
-`python -m delivery.alerts reset` clears rehearsal alerts so the on-stage sweep alerts again.
+`python -m delivery.alerts reset` clears rehearsal alerts so the on-stage sweep alerts again; `python -m delivery.seed --reset` wipes all demo state (tenders, matches, alert flags, sweep logs) and reseeds Ramesh. Before the demo, `python scripts/preflight.py` checks the whole stack and must print `READY`.
 
 | Method | Path | What it does |
 |---|---|---|
