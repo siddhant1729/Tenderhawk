@@ -135,9 +135,12 @@ TINYFISH_API_KEY=
 FALLBACK_MODE=false
 DATABASE_URL=postgresql+psycopg://tenderhawk:tenderhawk@localhost:5432/tenderhawk
 REDIS_URL=redis://localhost:6379/0
-LLM_API_KEY=
-LLM_MODEL=
-EMBEDDING_MODEL=
+ANTHROPIC_API_KEY=
+LLM_MODEL=claude-sonnet-5-5
+LLM_MODEL_FAST=claude-haiku-5-5
+OPENAI_API_KEY=
+EMBEDDING_MODEL=text-embedding-3-small
+EMBEDDING_DIM=1536
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
@@ -146,6 +149,15 @@ SMTP_URL=
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 **Never commit `.env`.** Share secrets over DM, not in the repo or in chat logs.
+
+### 4.1 Models (decided)
+| Use | Model (env var) | Notes |
+|---|---|---|
+| Eligibility parser | `claude-sonnet-5-5` (`LLM_MODEL`) | Tool-use / JSON-schema structured output generated from the Pydantic `Eligibility` model (§3.4); every criterion carries `source_clause` |
+| Light tasks (title normalising, alert copy) | `claude-haiku-5-5` (`LLM_MODEL_FAST`) | |
+| Embeddings | `text-embedding-3-small` (`EMBEDDING_MODEL`, `EMBEDDING_DIM=1536`) | Tender = `title + item + buyer`; profile = `products + HSN descriptions`; cosine via pgvector |
+
+- Model names live **only in env**. All LLM calls go through `api/llm.py`, all embedding calls through `api/embeddings.py`, so swapping a provider touches one file.
 
 ---
 
@@ -207,8 +219,8 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ---
 
 ## 7. Open decisions (resolve in the first hour)
-- [ ] **LLM provider/model** for eligibility extraction (needs structured output) → fills `LLM_MODEL`
-- [ ] **Embedding model** (fixes the pgvector column dimension, so decide before the first migration)
+- [x] **LLM provider/model** → Anthropic: `claude-sonnet-5-5` (eligibility parser), `claude-haiku-5-5` (light tasks). See §4.1.
+- [x] **Embedding model** → OpenAI `text-embedding-3-small`, 1536 dims (pgvector column `vector(1536)`). See §4.1.
 - [ ] **Demo category keyword(s)** for Ramesh: "steel rack", "steel almirah", "fabricated structure"?
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
 - [ ] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379`
