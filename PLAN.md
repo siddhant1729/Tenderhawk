@@ -272,11 +272,11 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 | Agent returns malformed JSON | `output_schema` plus one retry, then skip |
 | Running out of time | Cut order: email → corrigenda job → Haryana portal. **Never cut:** fallback mode, the clause highlight, WhatsApp |
 
-## 9. Progress (updated 2026-10-24)
+## 9. Progress (updated 2026-10-25)
 
 Legend: ✅ done and verified · 🟡 partly done / blocked · ⬜ not started
 
-**In short:** every feature in scope is built and merged to `main` (all `feat/*` branches merged). The one real code gap (live GeM document text) is closed (C1). Everything else is setup, real fixtures and rehearsal. No paid keys are needed: Groq (free) parses, keyword overlap ranks, Twilio's free trial sends WhatsApp.
+**In short:** every feature in scope is built and merged to `main` (all `feat/*` branches merged). The one real code gap (live GeM document text) is closed (C1). The dashboard now uses the Stitch design (`feat/web-stitch`) and has run on the real stack. Everything else is Twilio setup and rehearsal. No paid keys are needed: Groq (free) parses, keyword overlap ranks, Twilio's free trial sends WhatsApp.
 
 All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` runs the API (:8000) and dashboard (:3000) too.
 
@@ -291,6 +291,9 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 - Phase 6: `python -m delivery.seed --reset` (tenders, matches + alert flags, `sweep:*` Redis keys; reseeds Ramesh) and `scripts/preflight.py` (11 checks, PASS/WARN/FAIL, exit 1 on FAIL; TinyFish wallet read via the SDK: $15.18 ≈ 948 agent steps). Today it reports NOT READY: Docker down, Twilio unset, NOT_ELIGIBLE missing from the verdict mix.
 - Phase 7: verdict chips say "You can bid" / "Keep proof ready" / "Turnover short"·"Deadline passed"·"State not served" (icon + words, never colour alone); match page provenance line (found by TinyFish on <portal> · document fetch/direct/recorded · eligibility LLM/recorded · verdict by rules); Replay-mode badge with the demo clock; `:focus-visible` ring; eligibility table scrolls and row metrics wrap at 390 px; CORS from `WEB_ORIGINS`; DB down → plain 503 sentence, never a bare 500. No Playwright in the project, so no headless run: smoke-tested with the real build (`next start` + uvicorn, DB down): pages render loading shells, API answers 503 sentences, unknown route 404, no tracebacks. Full click-through of §0 waits for Docker (HUMAN TODO).
 - Phase 5 follow-up (C3): searched all 12 recorded open bids for corrigenda: none real, so no corrigenda fixture (never invented). The old filter flagged 4 of them from menu text ("Active Tenders | Corrigendum | Bid Awards") and boilerplate ("ATC and Corrigendum if any"); `is_corrigendum_notice` now needs a notice phrase ("Corrigendum 1", "date extended", "extended till <date>", "Amendment No. 2") within 250 chars of the bid number: 0 false positives on the same 12.
+**Done 2026-10-25:**
+- Web redesign from the Google Stitch project "TenderHawk AI Tender Intelligence" (`feat/web-stitch`): landing `/`, onboarding `/start`, per-profile tabs Live Matches / Watched Portals / Business Profile / WhatsApp Alerts sharing one sweep (`ProfileShell`), match detail in the same frame. Mockup claims we don't do (GSTN/Udyam API verification, factory photos, 14 portals, OCR, WhatsApp reply commands, Meta Cloud API) left out; Udyam shows "as declared". New read-only endpoints `GET /matches/{id}/alert/preview` and `GET /alerts/status`. Fonts self-hosted via `next/font`, icons inline: works offline.
+- First run on the real stack (Docker up): migrations, `seed --reset`, API in replay mode + production web build. Sweep → 123 SSE events: GeM 53 steps / 9 bids, CPPP 19 / 3, Haryana captcha card after 28 steps with portal link, corrigenda 13 / 0 new; 12 tenders, 1 ELIGIBLE, 11 CHECK_DOCS. Every page screenshotted with real data (1440 px and 390 px). Tests: **116 passed** (incl. the Postgres alert tests), web 22. Preflight: 16 PASS, 1 WARN (no NOT_ELIGIBLE), 1 FAIL (Twilio unset). Wallet $14.20.
 - Phase 8: CLAUDE.md, PLAN.md, README and `.env.example` agree: Groq gpt-oss models, keyword-overlap ranking (OpenAI/1536-d embedding config removed), no Claude/OpenAI key needed, the Phase 1 invariant wording, `DEMO_NOW`, preflight, `seed --reset`, the Twilio trial-prefix note, real test counts and the soft-cap finding.
 
 ### Left to implement (code)
@@ -306,29 +309,30 @@ Not building (by choice): OCR for scanned PDFs (every GeM bid seen has a text la
 ### Left to do (setup, data, rehearsal)
 | # | Task | Owner | Blocked on |
 |---|---|---|---|
-| S1 | 🟡 Web done (`npm install`, 19 tests, `npm run build`). **Docker Desktop isn't running** (`docker-desktop` WSL distro stopped): start it, enable WSL integration for Ubuntu, then `docker compose up -d`, `alembic upgrade head`, `python -m delivery.seed --reset` | Siddhant | a human at the Windows desktop |
+| S1 | ✅ Docker running (2026-10-25): `docker compose up -d`, `alembic upgrade head`, `seed --reset`, 116 + 22 tests, sweep in replay mode end to end | Siddhant | — |
 | S2 | ✅ Real fixtures: `gem_storage_rack`, `cppp_storage_rack`, `haryana_storage_rack`, `gem_steel_almirah`, all "fixture OK". **No NOT_ELIGIBLE from real data** (1 ELIGIBLE, 11 CHECK_DOCS) | Vandan + Siddhant | — |
 | S3 | 🟡 3 of 5 real GeM docs parsed with verbatim clauses (NIT Warangal rack, IIM Indore, GeM 9998812) | Harsh | — |
 | S4 | Twilio sandbox (free trial): `TWILIO_*` keys, stage phone joined (§7, still open), `ALERT_WHATSAPP_TO` set, send one real alert | Vandan | account, phone |
-| S5 | Full dry run live + fallback (checklist below), then tag `v0.1-demo` | All | S2, S4 |
+| S5 | Full dry run live + fallback (checklist below), clicking "Sweep now" and "Send now" by hand in a browser (only screenshotted so far), then tag `v0.1-demo` | All | S2, S4 |
+| S7 | Merge `feat/web-stitch` into `main` after the hand click-through | Siddhant | S5 |
 | S6 | H21–24 freeze: fixes only, rehearse twice per mode, decide presenter / driver | All | S5 |
 
 | Block | Task | Owner | Status | Notes |
 |---|---|---|---|---|
 | H0–4 | TinyFish wrapper, schemas, goals, CLI | Siddhant | ✅ | merged to `main` |
-| H0–4 | First live GeM fixture | Siddhant | 🟡 | `gem_steel_rack.json` exists, but its 10 bids are unrelated (matched "Ministry of Steel") and closed on 24 Oct, with no docs/parses. Re-record once the keyword is settled (§7). |
+| H0–4 | First live GeM fixture | Siddhant | ✅ | `gem_steel_rack` retired; replaced by `gem_storage_rack` + `gem_steel_almirah` (Phase 5) |
 | H0–4 | FastAPI, models, Alembic, `/health`, `/profiles` | Harsh | ✅ | |
 | H0–4 | `docker-compose.yml`, Ramesh seed | Vandan | ✅ | `python -m delivery.seed` |
 | H0–4 | Next.js scaffold + profile form | Aditya (built by Harsh) | ✅ | `web/`, Next.js 16 + Tailwind 4; Ramesh demo fill button |
 | H4–10 | Upsert + dedupe, `POST /sweeps`, Redis → SSE | Harsh | ✅ | late clients replay the full log |
-| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). GeM doc text ✅ via direct PDF download when Fetch fails (C1). CPPP + Haryana not run live (C2). Runs capped at 300 s (custom step cap rejected by TinyFish). |
+| H4–10 | `sweep_portal` streaming, `fetch_doc_text`, CPPP + Haryana goals | Siddhant | 🟡 | GeM live run ✅ via Indian proxy (10 bids, 8 steps). GeM doc text ✅ via direct PDF download when Fetch fails (C1). CPPP + Haryana run live and recorded (C2). Runs capped at 300 s (custom step cap rejected by TinyFish). |
 | H4–10 | Fallback replay | Vandan + Siddhant | ✅ | replays steps with delays; missing fixtures → error card with portal link |
 | H4–10 | Live agents panel (SSE) | Aditya (built by Harsh) | ✅ | 4 cards from §3.3 events; survives reconnect replays; `?sweep=` follows a running sweep |
-| H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Groq free tier (Claude removed). 2 of 5 real GeM docs parsed on Groq with verbatim clauses (storage rack bid GEM/2026/B/7509529, IIM Indore GEM/2025/B/6356290) |
+| H10–16 | LLM eligibility parser + PyMuPDF | Harsh | 🟡 | Groq free tier (Claude removed). 3 of 5 real GeM docs parsed on Groq with verbatim clauses (see S3) |
 | H10–16 | Matcher + embeddings + `/profiles/{id}/matches`, `/matches/{id}` | Harsh | ✅ | keyword-overlap ranking; clause excerpts for highlighting |
 | H10–16 | `search_corrigenda` daily job + corrigenda card | Siddhant (backend wiring: Harsh) | ✅ | 4th SSE card in every sweep; daily 07:00 IST job + `POST /corrigenda/check`; extensions move `end_date`; shown as info reasons with links. Fallback reads `delivery/fixtures/{portal}_corrigenda.json` (`{bid_no: [Corrigendum]}`); none recorded yet |
-| H10–16 | Matches list UI | Aditya (built by Harsh) | ✅ | verdict chips with text labels, value, deadline countdown, fit; low-relevance folded |
-| H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | 🟡 | Tooling done: `python -m delivery.build_fixture attach/check`. Recording needs `TINYFISH_API_KEY` (live runs, set) and `GROQ_API_KEY` (parses, set) |
+| H10–16 | Matches list UI | Aditya (built by Harsh) | ✅ | verdict chips with text labels, value, deadline countdown, fit; low-relevance folded. Restyled to the Stitch design with 4 tabs (2026-10-25) |
+| H10–16 | Fixtures GeM/CPPP/Haryana × "storage rack" + doc texts + parses | Vandan | ✅ | Recorded (S2): GeM, CPPP, Haryana (blocked) + GeM steel almirah, all "fixture OK"; only 1 GeM doc parsed into a fixture |
 | H16–21 | Twilio WhatsApp + email, `/matches/{id}/alert` | Vandan (built by Harsh) | 🟡 | `delivery/alerts.py`: Twilio REST + SMTP, endpoint, auto-alert after sweeps; tested with stubs. Needs `TWILIO_*` + stage phone joined to the sandbox to send for real |
 | H16–21 | Match detail page with highlighted clause | Aditya (built by Harsh) | ✅ | clause highlighted in the bid text, checklist, corrigenda, alert button with message preview |
 | H16–21 | Error states (blocked portal link, LLM failure → CHECK_DOCS) | Harsh + Siddhant | ✅ | "Open on portal" cards, API-down / DB-down banners, reconnect notice, 404 pages |
@@ -344,8 +348,8 @@ pip install -r requirements.txt
 alembic upgrade head
 python -m delivery.seed           # prints Ramesh's profile id
 uvicorn api.main:app --reload     # :8000
-python -m pytest -q tests         # 114 tests, no keys needed (2 alert tests + seed reset need Postgres/Redis running)
-cd web && npm test                # 19 tests
+python -m pytest -q tests         # 116 tests, no keys needed (2 alert tests + seed reset need Postgres/Redis running)
+cd web && npm test                # 22 tests
 python scripts/preflight.py       # before a demo: must print READY
 ```
 

@@ -86,13 +86,14 @@ This is a 24-hour hackathon build. What exists right now:
 
 - [x] **Agents layer** (`agents/`): TinyFish wrapper, schemas, goals for GeM / CPPP / Haryana, CLI, fixture recorder, offline replay
 - [x] **Backend** (`api/`): FastAPI, Postgres models + migrations, background sweeps with live SSE, eligibility parser on Groq's free tier (`openai/gpt-oss-120b`, strict JSON schema), rules matcher with keyword-overlap ranking and clause excerpts, parse cache + background parsing, daily corrigenda job, one demo clock (`DEMO_NOW`)
-- [x] **Dashboard** (`web/`): Next.js 16 — profile form, live agents panel (4 cards over SSE), matches with verdict chips, match detail with the source clause highlighted in the bid text, alert button
+- [x] **Dashboard** (`web/`): Next.js 16, built from the Google Stitch "TenderHawk" design — landing page, onboarding, and per-profile tabs (Live Matches, Watched Portals, Business Profile, WhatsApp Alerts) that share one live sweep over SSE; match detail with the source clause highlighted in the bid text. Only real data is shown (no mockup claims)
 - [x] **Alerts** (`delivery/alerts.py`): WhatsApp via the Twilio sandbox and email via SMTP; `POST /matches/{id}/alert`; new eligible matches are alerted after each sweep
 - [x] **Infra** (`delivery/`): Docker Compose for Postgres and Redis (plus API and dashboard images), Ramesh seed profile, fixture builder
 - [x] **Real fixtures**: GeM storage rack (parsed, ELIGIBLE), CPPP storage rack (3 bids, no readable documents), Haryana (captcha: replays as the blocked card), GeM steel almirah (8 bids). Real verdict mix: 1 ELIGIBLE, 11 CHECK_DOCS, 0 NOT_ELIGIBLE
 - [x] **Live document text for GeM**: Fetch, else a direct PDF download in `agents/`
 - [x] **Preflight + clean state**: `python scripts/preflight.py`, `python -m delivery.seed --reset`
-- [ ] **Twilio sandbox + stage phone**, and a full click-through with Docker running (see PLAN.md §9)
+- [x] **Run on the real stack** (2026-10-25, Docker up, replay mode): sweep → 12 tenders, 4 agent cards, verdicts and clauses on every page; 116 + 22 tests pass
+- [ ] **Twilio sandbox + stage phone** (the only preflight FAIL), and a hand click-through of "Sweep now" / "Send now" in a browser (see PLAN.md §9)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
 
@@ -132,6 +133,19 @@ Set `FALLBACK_MODE=true` to run the whole sweep from recorded fixtures: no netwo
 cd web && npm install && npm run dev      # http://localhost:3000 (talks to NEXT_PUBLIC_API_URL)
 ```
 
+| Route | Page |
+|---|---|
+| `/` | Landing page (problem, how it works, pricing — pitch only) |
+| `/start` | Create a business profile (or open an existing one) |
+| `/profiles/{id}` | **Live Matches**: Sweep now, live agent cards, verdict filters, a card per tender with reasons and the quoted bid clause |
+| `/profiles/{id}/portals` | **Watched Portals**: one live card per TinyFish agent (GeM, CPPP, Haryana, corrigenda), what they search for |
+| `/profiles/{id}/profile` | **Business Profile**: the profile's facts, what each certification changes in matching, the latest verdict |
+| `/profiles/{id}/alerts` | **WhatsApp Alerts**: the exact alert text per match, Send now, which channels are set up |
+| `/matches/{id}` | Verdict, highlighted source clause, document checklist, alert button |
+
+`/profiles/{id}?sweep=<sweep_id>` follows a sweep that's already running (the API replays its log). Fonts are bundled
+at build time and icons are inline, so the dashboard works offline.
+
 Or run everything in Docker: `docker compose --profile app up -d --build` starts Postgres, Redis, the API on :8000
 and the dashboard on :3000 (move a busy host port with e.g. `REDIS_PORT=6380`). A single-page fallback console is
 also served by the API at `/demo`.
@@ -156,12 +170,14 @@ Twilio trial accounts prefix outgoing SMS with "Sent from your Twilio trial acco
 | `POST` | `/profiles/{id}/match` | Re-run the matcher without sweeping |
 | `POST` | `/corrigenda/check` | Run the corrigenda job now (Search API, no credits) |
 | `POST` | `/matches/{id}/alert` | Send the WhatsApp / email alert now; returns per-channel status and the message preview |
+| `GET` | `/matches/{id}/alert/preview` | The alert text, without sending |
+| `GET` | `/alerts/status` | Which channels are configured (WhatsApp / email), masked recipient, auto-alert limit |
 
 ### Run the tests
 
 ```bash
-python -m pytest -q tests          # no API keys needed
-cd web && npm test                 # dashboard helpers and live-panel state
+python -m pytest -q tests          # 116 tests, no API keys needed (a few need Postgres/Redis running)
+cd web && npm test                 # 22 tests: dashboard helpers and live-panel state
 ```
 
 ### Drive the agents directly
@@ -229,7 +245,7 @@ See [`.env.example`](.env.example). Never commit `.env`.
 ```
 agents/      TinyFish wrapper, portal goals, schemas, SSE step events
 api/         FastAPI app, models, migrations, eligibility parser, matcher, corrigenda job
-web/         Next.js dashboard: profile form, live agents panel, matches, match detail
+web/         Next.js dashboard (Stitch design): landing, onboarding, Live Matches, Watched Portals, Business Profile, WhatsApp Alerts, match detail
 delivery/    Alerts (WhatsApp, email), seed profile, fixtures and the fixture builder, Docker images
 tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 ```
