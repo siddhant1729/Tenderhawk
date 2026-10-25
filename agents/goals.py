@@ -21,26 +21,26 @@ PORTALS = {
     "gem": {
         "url": "https://bidplus.gem.gov.in/all-bids",
         "goal": (
-            "Type '{category}' into the bid search box and run the search. "
-            "If page 1 has no relevant bids, search once more using only the last word of '{category}' "
-            "(e.g. 'rack') and apply the same relevance rule. "
-            "If the results allow sorting, sort by bid end date with the latest closing first. "
+            "Type '{category}' into the bid search box and run the search once. "
+            "If it returns no relevant bids, search once more using only the last word of '{category}' "
+            "(e.g. 'rack'). Never run the same search twice, don't change the sort order, and don't open "
+            "bid details or tooltips: read everything from the result cards. "
             "For each bid card read: bid_no (e.g. GEM/2026/B/1234567), "
-            "title (the FULL 'Items' text; if it is cut off with '...', read the full text from its tooltip "
-            "or title attribute, or open the bid details, and never return a value ending in '...'), "
-            "item (the main product name), buyer (ministry and department), quantity, "
-            "end_date (the 'End Date' value with time), "
+            "title (the 'Items' text as shown on the card), item (the main product name), "
+            "buyer (ministry and department), quantity, end_date (the 'End Date' value with time), "
             "doc_url (copy the exact href of the bid-number link, which opens the bid document and looks like "
             "https://bidplus.gem.gov.in/showbidDocument/1234567; never build or guess a URL, use an empty string "
             "if you can't read the href). "
-            "Look through up to 3 result pages to find matching bids. " + _COMMON
+            "Look through at most 2 result pages, then return what you have. " + _COMMON
         ),
     },
     "cppp": {
-        "url": "https://eprocure.gov.in/eprocure/app?page=FrontEndLatestActiveTenders&service=page",
+        "url": "https://eprocure.gov.in/eprocure/app",
         "goal": (
-            "On the CPPP 'Latest Active Tenders' list, find tenders related to '{category}' "
-            "(match on title). For each matching row read: bid_no (the tender reference number / tender ID), "
+            "On the CPPP home page, read the 'Latest Tenders' box (it scrolls; wait for it to load) and find "
+            "tenders related to '{category}' (match on title). Do NOT open 'Latest Active Tenders', "
+            "'Tenders by Closing Date', 'Advanced Search' or any search box or form: they need a captcha. "
+            "For each matching row read: bid_no (the tender reference number / tender ID), "
             "title, buyer (organisation name), end_date (bid submission closing date), "
             "doc_url (absolute link of the tender title). " + _COMMON
         ),
@@ -49,10 +49,11 @@ PORTALS = {
         "url": "https://etenders.hry.nic.in/nicgep/app",
         "goal": (
             "On the Haryana e-procurement home page, open the 'Latest Tenders' list (use 'more' if shown) "
-            "and find tenders related to '{category}' (match on title). For each matching row read: "
+            "and find tenders related to '{category}' (match on title). Do NOT use any search box, "
+            "'Advanced Search' or 'Tenders by Closing Date' form: they lead to a captcha. Use only the list's "
+            "own next-page links, up to 3 pages. For each matching row read: "
             "bid_no (tender reference number or tender ID), title, buyer (department), "
             "end_date (closing date), doc_url (absolute link of the tender title). "
-            "If the only way to search is a form with a captcha, return what is visible in the latest list instead. "
             + _COMMON
         ),
     },
