@@ -93,7 +93,8 @@ This is a 24-hour hackathon build. What exists right now:
 - [x] **Live document text for GeM**: Fetch, else a direct PDF download in `agents/`
 - [x] **Preflight + clean state**: `python scripts/preflight.py`, `python -m delivery.seed --reset`
 - [x] **Run on the real stack** (2026-10-25, Docker up, replay mode): sweep → 12 tenders, 4 agent cards, verdicts and clauses on every page; 116 + 22 tests pass
-- [ ] **Twilio sandbox + stage phone** (the only preflight FAIL), and a hand click-through of "Sweep now" / "Send now" in a browser (see PLAN.md §9)
+- [ ] **Live sweeps returning bids**: agent runs now queue 2 at a time and are cut off and cancelled at 300 s; GeM is reachable but its goal still returns 0 bids (closing-soonest sort, see PLAN.md C5); CPPP's listing pages now need a captcha, so only its homepage list is readable. Demo with `FALLBACK_MODE=true` until then
+- [ ] **Twilio stage phone**: credentials set and verified; the phone still has to join the sandbox and receive one real alert. Then a hand click-through of "Sweep now" / "Send now" in a browser (see PLAN.md §9)
 
 The build order and interfaces are in [`PLAN.md`](PLAN.md).
 
@@ -176,7 +177,7 @@ Twilio trial accounts prefix outgoing SMS with "Sent from your Twilio trial acco
 ### Run the tests
 
 ```bash
-python -m pytest -q tests          # 116 tests, no API keys needed (a few need Postgres/Redis running)
+python -m pytest -q tests          # 117 tests, no API keys needed (a few need Postgres/Redis running)
 cd web && npm test                 # 22 tests: dashboard helpers and live-panel state
 ```
 
@@ -229,7 +230,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `LLM_EFFORT`, `LLM_MAX_DOC_CHARS`, `LLM_CONCURRENCY` | Parser reasoning effort; characters sent per document and documents parsed at once (free tier: 8k tokens/min) |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
 | `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
-| `TINYFISH_CONCURRENCY`, `AGENT_TIMEOUT` | Agent runs at once (the plan allows 2; extra runs wait locally, GeM first) and seconds to wait for one run (default 540) |
+| `TINYFISH_CONCURRENCY`, `AGENT_TIMEOUT` | Agent runs at once (the plan allows 2; extra runs wait locally, GeM first) and the hard cap per run in seconds (default 300; the run is cancelled on TinyFish) |
 | `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
 | `NEXT_PUBLIC_API_URL` | Where the dashboard calls the API (baked into the web build: rebuild after changing it) |
 | `WEB_ORIGINS` | Browser origins the API allows (CORS), comma-separated; default `http://localhost:3000,http://127.0.0.1:3000`. Add the laptop's LAN address if the dashboard is opened from another device |
@@ -256,7 +257,7 @@ tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 - 🚫 **Never bypass a captcha.** A blocked portal is skipped and the user gets a direct link.
 - 👀 **Read-only.** TenderHawk never submits or participates in a bid.
 - 🇮🇳 Agent runs go through an Indian proxy, because government portals drop connections from foreign IPs.
-- ⏱️ At most 2 agents run at once (the plan's limit; GeM starts first, the rest wait locally, not in TinyFish's queue), and each run stops at 540 s (TinyFish's own 480 s cap is soft), so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
+- ⏱️ At most 2 agents run at once (the plan's limit; GeM starts first, the rest wait locally, not in TinyFish's queue), and each run is cut off at 300 s and cancelled on TinyFish (its own 300 s cap is soft), so a stuck portal becomes an error card with a direct link, not a sweep that never ends or keeps billing.
 - 🔑 Config comes from env vars only; secrets never enter the repo.
 
 ## Who it's for
