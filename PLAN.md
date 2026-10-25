@@ -172,7 +172,9 @@ LLM_MODEL_FAST=openai/gpt-oss-20b
 LLM_EFFORT=medium            # reasoning effort for the eligibility parser (low | medium | high)
 LLM_MAX_DOC_CHARS=14000      # free tier is 8k tokens/min; GeM eligibility sits in the first pages
 LLM_CONCURRENCY=1            # documents parsed in parallel per sweep (free tier fits ~1/min)
-LIVE_MAX_KEYWORDS=1          # profile keywords per live sweep; each one is a billed Agent run per portal
+LIVE_MAX_KEYWORDS=1          # profile keywords per live portal (billed Agent runs); replayed portals use all
+LIVE_PORTALS=                # FALLBACK_MODE=false only: portals swept live, e.g. "gem"; the rest replay (labelled). Empty = all
+AGENT_TIMEOUT=480            # live GeM runs take 300-512 s through the Indian proxy
 SCHEDULER_ENABLED=true       # daily corrigenda job inside the API process (APScheduler)
 CORRIGENDA_HOUR=7            # IST hour for the daily corrigenda job
 TWILIO_ACCOUNT_SID=
@@ -260,7 +262,7 @@ Each block ends with a **checkpoint**: merge to `main`, and `main` must still ru
 ## 7. Open decisions (resolve in the first hour)
 - [x] **LLM provider/model** → Groq free tier: `openai/gpt-oss-120b` (eligibility parser), `openai/gpt-oss-20b` (light tasks). We have no Anthropic or OpenAI key (and no budget), so Claude was removed and ranking uses keyword overlap. See §4.1.
 - [x] **Ranking** → keyword overlap (no OpenAI key, no budget). See §4.1.
-- [x] **Demo category keyword(s)** for Ramesh → "storage rack", "steel rack", "steel almirah" (in `delivery/seed/ramesh.json`). "storage rack" comes first because a live GeM run for "steel rack" found no rack bids (§1). Live sweeps use only the first (`LIVE_MAX_KEYWORDS=1`); fixture replay uses all three, so record `gem_storage_rack.json` first.
+- [x] **Demo category keyword(s)** for Ramesh → "steel almirah", "storage rack", "steel rack" (in `delivery/seed/ramesh.json`). "steel almirah" comes first because it is a real GeM category ("Steel Almirah / Cabinets") that returned 8 open bids live, while live "storage rack" searches mostly return 0 relevant bids (C5). Live portals search only the first keyword (`LIVE_MAX_KEYWORDS=1`); replayed portals use all three, so CPPP and Haryana still replay their "storage rack" recordings.
 - [ ] **Stage phone** joined to the Twilio sandbox, and whose number
 - [x] **Run ports:** API `:8000`, web `:3000`, Postgres `:5432`, Redis `:6379`. Docker host ports can be moved with `API_PORT`, `WEB_PORT`, `POSTGRES_PORT`, `REDIS_PORT`.
 
@@ -305,7 +307,7 @@ All §3.5 endpoints exist. Docker: `docker compose --profile app up -d --build` 
 | C1 | ✅ **Live GeM document text** (2026-10-24): Fetch → else direct PDF download in `agents/`; verified live on `showbidDocument/9845350` (19,776 chars, `source=direct`). The agent route was tried and can't read PDFs (§1) | Siddhant | done |
 | C2 | ✅ **CPPP + Haryana live runs** (2026-10-25): CPPP 3 bids (documents only behind expiring session links → CHECK_DOCS + stable list link); Haryana blocked by captcha after 26 steps → error card with portal link, replayed from its fixture. Cap: custom steps rejected, 300 s is soft → enforced by `agents/` at 300 s and the run cancelled on TinyFish | Siddhant | done |
 | C3 | ✅ Corrigenda checked for all 12 recorded bids: none real, so no fixture (the 4th card replays "0 new"). Matcher false positives fixed | Siddhant | done |
-| C5 | 🟡 **GeM live goal returns 0 bids.** GeM lists closing-soonest first, so pages 1–2 all close tomorrow and the ≥2-days filter drops every card (live run 03:30: 686 results for "storage rack", 0 kept); the agent also reports "nothing relevant" as `blocked`, which shows as a block on the card. Fix in progress (shorter goal: one search, sort once latest-closing first, no tooltips; `blocked` only for captcha/login/site errors). Not committed until a live GeM run returns relevant, still-open storage-rack bids | Siddhant | |
+| C5 | ✅ **GeM live goal returned 0 bids** (fixed 2026-10-25, Harsh). Causes: (1) GeM lists closing-soonest first and the short goal doesn't re-sort, so the 2-day window dropped every card → window is now tomorrow onward (`MIN_CLOSE_DAYS=1`); (2) the agent reports "nothing relevant" as `blocked` → `agents/` shows a block only when the reason names a captcha/login/unreachable site, else "No relevant open bids"; (3) our 300 s timeout cut off runs that finished at 319 s → `AGENT_TIMEOUT` 480 s; (4) live keyword is "steel almirah" (a real GeM category). Verified live 2026-10-25: 16 steps, **7 real open bids** (Steel Almirah / Cabinets from Railways, MoD, Haryana Higher Education…) with real `showbidDocument` links. `LIVE_PORTALS=gem` runs GeM live and replays CPPP/Haryana (C6) | Harsh | |
 | C6 | 🟡 CPPP and Haryana live goals: read only the public homepage "Latest Tenders" lists, never a search form (they need a captcha). Then rerun each live on its own (6 min wall clock) | Siddhant | C5 |
 | C4 | Optional, cut first: email via `SMTP_URL` (code done, needs an SMTP account, e.g. a Gmail app password) | Vandan | |
 
@@ -362,5 +364,6 @@ python scripts/preflight.py       # before a demo: must print READY
 1. `docker compose up -d` (or the app profile), `alembic upgrade head`, then **`python -m delivery.seed --reset`**: wipes tenders, matches (and their alert flags) and sweep logs, reseeds Ramesh, prints his id. The on-stage sweep then starts from nothing and alerts again.
 2. **`python scripts/preflight.py`** prints PASS / WARN / FAIL for: docker services, alembic at head, `/health`, web reachable + CORS for the web origin, `FALLBACK_MODE` / `DEMO_NOW`, every fixture "fixture OK", verdict mix, Twilio creds + `ALERT_WHATSAPP_TO`, TinyFish key + wallet, Groq key + models, ports. It must end in `READY`.
 3. The stage phone has sent the sandbox join message to the Twilio number **within the last 24 h** (otherwise Twilio accepts the message but never delivers it). `ALERT_WHATSAPP_TO` is that phone. (Preflight can't see this.) Trial accounts prefix SMS with "Sent from your Twilio trial account -"; check on the first real send whether WhatsApp shows it too.
-4. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
+4. **Live demo (GeM through TinyFish on stage):** after step 1, run one sweep with `FALLBACK_MODE=true` so the dashboard holds the recorded tenders (incl. the ELIGIBLE one), then restart the API with `FALLBACK_MODE=false LIVE_PORTALS=gem`. "Sweep now" then streams a real GeM agent run (5–7 min at ~15 s a step: start it as you begin talking) while CPPP and Haryana replay their recordings (labelled "Replaying the recorded run"). New GeM bids land in Matches as their documents are parsed. If GeM is down or finds nothing, the card says so and the recorded matches are still there.
+5. Fallback rehearsal with wifi off: `FALLBACK_MODE=true`, dashboard at :3000, sweep, open a match, send the alert over a phone hotspot.
 
