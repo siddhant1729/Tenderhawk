@@ -229,8 +229,9 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `OPENAI_API_KEY` | Not needed. Product fit is keyword overlap; `api/embeddings.py` would switch to OpenAI embeddings only if a key were set |
 | `LLM_EFFORT`, `LLM_MAX_DOC_CHARS`, `LLM_CONCURRENCY` | Parser reasoning effort; characters sent per document and documents parsed at once (free tier: 8k tokens/min) |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
-| `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
-| `TINYFISH_CONCURRENCY`, `AGENT_TIMEOUT` | Agent runs at once (the plan allows 2; extra runs wait locally, GeM first) and the hard cap per run in seconds (default 300; the run is cancelled on TinyFish) |
+| `LIVE_MAX_KEYWORDS` | Profile keywords per live portal (each is a billed agent run); replayed portals use all keywords |
+| `LIVE_PORTALS` | With `FALLBACK_MODE=false`: portals swept live (e.g. `gem`); the others replay their recorded runs, labelled as recordings. Empty = all live |
+| `TINYFISH_CONCURRENCY`, `AGENT_TIMEOUT` | Agent runs at once (the plan allows 2; extra runs wait locally, GeM first) and the hard cap per run in seconds (default 480: live GeM runs take 300–512 s; the run is cancelled on TinyFish) |
 | `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
 | `NEXT_PUBLIC_API_URL` | Where the dashboard calls the API (baked into the web build: rebuild after changing it) |
 | `WEB_ORIGINS` | Browser origins the API allows (CORS), comma-separated; default `http://localhost:3000,http://127.0.0.1:3000`. Add the laptop's LAN address if the dashboard is opened from another device |

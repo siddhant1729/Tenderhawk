@@ -5,7 +5,10 @@ from agents.schemas import IST
 
 _COMMON = (
     "Today is {today}. Only keep bids closing on or after {min_close} (skip anything closing sooner). "
-    "Relevance: keep a bid only if its items/title describe '{category}' itself or a close variant; "
+    "Relevance: keep a bid if its items/title name the same kind of product as '{category}', even when worded "
+    "differently or more generally (for 'steel almirah' also keep 'Almirah', 'Steel Cupboard', "
+    "'Almirah / Cabinets'; for 'storage rack' also keep 'Slotted Angle Rack', 'Metal Shelving Rack'); "
+    "a later step ranks relevance, so when in doubt keep it. Skip only clearly different products, and "
     "never keep a bid just because the ministry, department or organisation name contains a search word. "
     "Return at most {limit} bids. "
     "If a captcha, OTP or login wall appears, do NOT try to solve it: stop immediately and "
@@ -60,7 +63,13 @@ PORTALS = {
 }
 
 
-def goal_for(portal: str, category: str, limit: int = 10, min_days: int = 2) -> tuple[str, str]:
+# GeM lists closing-soonest first and the short goal doesn't re-sort (each sort costs steps), so a 2-day
+# window dropped every card on pages 1-2 (live run 25 Oct: 686 results, 0 kept). Tomorrow onward still
+# leaves a day to bid.
+MIN_CLOSE_DAYS = 1
+
+
+def goal_for(portal: str, category: str, limit: int = 10, min_days: int = MIN_CLOSE_DAYS) -> tuple[str, str]:
     p = PORTALS[portal]
     today = datetime.now(IST).date()
     goal = p["goal"].format(

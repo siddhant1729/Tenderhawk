@@ -87,11 +87,15 @@ def test_one_bad_parse_does_not_sink_the_others(monkeypatch, events):
     assert asyncio.run(sweeps._parse_docs("s", [1, 2])) == 1 and saved == [2]
 
 
-def test_live_mode_caps_keywords(monkeypatch):
+def test_live_portals_search_the_first_keyword_replays_use_all(monkeypatch):
     class P:
         keywords = ["a", "b", "c"]
         products = []
+    kws = sweeps._keywords(P)
+    assert kws == ["a", "b", "c"]
     monkeypatch.setattr(sweeps, "fallback_mode", lambda: False)
-    assert sweeps._keywords(P) == ["a"]
+    monkeypatch.setattr(sweeps, "live_portals", lambda: {"gem"})
+    assert sweeps._portal_keywords("gem", kws) == ["a"]                 # billed: capped
+    assert sweeps._portal_keywords("cppp", kws) == ["a", "b", "c"]      # replayed: free
     monkeypatch.setattr(sweeps, "fallback_mode", lambda: True)
-    assert sweeps._keywords(P) == ["a", "b", "c"]
+    assert sweeps._portal_keywords("gem", kws) == ["a", "b", "c"]

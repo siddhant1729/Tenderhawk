@@ -34,7 +34,8 @@ def reset() -> dict:
 def seed() -> int:
     data = json.loads(SEED.read_text())
     with SessionLocal() as db:
-        p = db.query(Profile).filter_by(name=data["name"]).one_or_none()
+        # The dashboard's onboarding can save another "Ramesh"; refresh the oldest, never crash the reset.
+        p = db.query(Profile).filter_by(name=data["name"]).order_by(Profile.id).first()
         if p is None:
             p = Profile(**data)
             db.add(p)

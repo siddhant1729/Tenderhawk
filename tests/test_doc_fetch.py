@@ -76,7 +76,8 @@ def test_fallback_mode_reads_fixture_docs_only(monkeypatch):
 
 def test_agent_limits_never_send_max_steps():
     """The account rejects a custom max_steps with HTTP 403, which would fail every live sweep."""
-    assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 300
+    assert client.AGENT_LIMITS.max_steps is None
+    assert 300 <= client.AGENT_LIMITS.max_duration_seconds < client.AGENT_TIMEOUT  # we outwait the agent's own budget
 
 
 def test_session_bound_portal_links_are_dropped():
