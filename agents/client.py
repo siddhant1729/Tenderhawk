@@ -34,10 +34,10 @@ INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
 
 # Hard cap so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
 # Time only: a custom max_steps is rejected (HTTP 403 "not enabled for custom max steps", beta-only).
-# Successful GeM runs took 385 s and 471 s, so 300 s threw real bids away.
-AGENT_LIMITS = AgentConfig(max_duration_seconds=480)
-# TinyFish treats that as a soft limit (a Haryana run went 512 s), so we also stop waiting ourselves.
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "540"))
+AGENT_LIMITS = AgentConfig(max_duration_seconds=300)
+# TinyFish treats that as a soft limit (runs went 385 s and 512 s), so we enforce it ourselves: stop waiting
+# and cancel the run, which otherwise keeps running (and billing) after we stop listening.
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "300"))
 # The plan runs 2 agents at once; a 3rd sits in TinyFish's queue (seen: 197 s) and that wait ate our timeout.
 # Queue here instead, so the timeout only counts running time. Callers start GeM first (PORTALS order).
 TINYFISH_CONCURRENCY = int(os.getenv("TINYFISH_CONCURRENCY", "2"))
@@ -136,11 +136,24 @@ async def _run_agent(portal: str, category: str, on_step: Callable[[int, str], N
                                 last_error = ev.error.message if ev.error else f"run {ev.status}"
         except TimeoutError:
             # No retry: a second run would take as long. The card shows the portal link instead.
-            raise RuntimeError(f"Agent still running after {AGENT_TIMEOUT} s ({len(steps)} steps); stopped waiting")
+            if run_id:
+                await _cancel_run(run_id)
+            raise RuntimeError(f"Agent still running after {AGENT_TIMEOUT} s ({len(steps)} steps); cancelled")
         if result is not None and (result.get("blocked") or isinstance(result.get("bids"), list)):
             return {"run_id": run_id, "url": url, "goal": goal, "steps": steps, "result": result}
         log.warning("%s run %s unusable (attempt %d): %s", portal, run_id, attempt, last_error)
     raise RuntimeError(f"{portal} agent failed: {last_error}")
+
+
+async def _cancel_run(run_id: str) -> None:
+    """The SDK has no agent-run cancel; the REST endpoint does it. Best effort: never raises."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as http:
+            r = await http.post(f"https://agent.tinyfish.ai/v1/runs/{run_id}/cancel",
+                                headers={"X-API-Key": os.environ["TINYFISH_API_KEY"]})
+        log.info("cancelled run %s: %s %s", run_id, r.status_code, r.text[:120])
+    except Exception:
+        log.exception("cancel failed for run %s", run_id)
 
 
 def _short_reason(reason: str | None) -> str:

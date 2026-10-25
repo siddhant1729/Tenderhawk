@@ -76,7 +76,7 @@ def test_fallback_mode_reads_fixture_docs_only(monkeypatch):
 
 def test_agent_limits_never_send_max_steps():
     """The account rejects a custom max_steps with HTTP 403, which would fail every live sweep."""
-    assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 480
+    assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 300
 
 
 def test_session_bound_portal_links_are_dropped():
@@ -119,7 +119,11 @@ def test_agent_run_past_the_hard_timeout_becomes_an_error_card(monkeypatch):
             return False
         def __aiter__(self):
             return self
+        started = False
         async def __anext__(self):
+            if not self.started:
+                self.started = True
+                return client.StartedEvent.model_construct(run_id="run-1")
             await asyncio.sleep(10)
 
     class TF:
@@ -128,9 +132,15 @@ def test_agent_run_past_the_hard_timeout_becomes_an_error_card(monkeypatch):
             def stream(**kw):
                 return Hanging()
     monkeypatch.setattr(client, "_tf", lambda: TF)
+    cancelled = []
+
+    async def cancel(run_id):
+        cancelled.append(run_id)
+    monkeypatch.setattr(client, "_cancel_run", cancel)
     events = []
     assert asyncio.run(client.sweep_portal("gem", "storage rack", events.append)) == []
-    assert events[-1].type == "error" and "stopped waiting" in events[-1].message
+    assert events[-1].type == "error" and "cancelled" in events[-1].message
+    assert cancelled == ["run-1"]  # the TinyFish run is stopped too, not left running and billing
     assert events[-1].direct_url == client.PORTALS["gem"]["url"]
 
 
