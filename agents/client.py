@@ -34,10 +34,13 @@ INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
 
 # Hard cap so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
 # Time only: a custom max_steps is rejected (HTTP 403 "not enabled for custom max steps", beta-only).
-AGENT_LIMITS = AgentConfig(max_duration_seconds=300)
+# The agent paces itself to this budget: at 300 s it gave up at step 20 of a GeM search ("276s/300s").
+AGENT_LIMITS = AgentConfig(max_duration_seconds=420)
 # TinyFish treats that as a soft limit (runs went 385 s and 512 s), so we enforce it ourselves: stop waiting
 # and cancel the run, which otherwise keeps running (and billing) after we stop listening.
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "300"))
+# Live GeM runs take 300-512 s through the Indian proxy (~17 s a step). At 300 s we threw away runs that
+# finished at 319 s, after paying for them; 480 s keeps those and still cancels a runaway.
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "480"))
 # The plan runs 2 agents at once; a 3rd sits in TinyFish's queue (seen: 197 s) and that wait ate our timeout.
 # Queue here instead, so the timeout only counts running time. Callers start GeM first (PORTALS order).
 TINYFISH_CONCURRENCY = int(os.getenv("TINYFISH_CONCURRENCY", "2"))
@@ -48,6 +51,24 @@ DOC_HOSTS = {urlparse(p["url"]).hostname for p in PORTALS.values()}
 DOC_MAX_BYTES = 15_000_000
 
 _client: AsyncTinyFish | None = None
+
+
+def live_portals() -> set[str]:
+    """Portals swept live when FALLBACK_MODE is off. LIVE_PORTALS=gem runs GeM through TinyFish and replays
+    the recorded runs of the others (e.g. while their live goals still meet captchas). Default: all."""
+    raw = os.getenv("LIVE_PORTALS", "").strip()
+    return {p.strip() for p in raw.split(",") if p.strip()} if raw else set(PORTALS)
+
+
+# The agent often reports "nothing relevant found" as blocked=true despite the goal. Only these are real blocks.
+_REAL_BLOCK = re.compile(
+    r"captcha|otp\b|log ?in|sign ?in|password|unreachable|err_|tunnel|timed? ?out|access denied|forbidden"
+    r"|\b40[13]\b|\b50[234]\b|site (?:is )?down|not (?:load|reachabl|respond)|connection (?:refused|reset|failed)",
+    re.I)
+
+
+def is_real_block(reason: str | None) -> bool:
+    return bool(reason and _REAL_BLOCK.search(reason))
 
 
 def fallback_mode() -> bool:
@@ -162,14 +183,16 @@ def _short_reason(reason: str | None) -> str:
     return first if len(first) <= 140 else first[:137] + "…"
 
 
-async def _replay(portal: str, category: str, emit: Emit, sweep_id: str) -> list[BidListing]:
+async def _replay(portal: str, category: str, emit: Emit, sweep_id: str, labelled: bool = False) -> list[BidListing]:
     path = fixture_path(portal, category)
     if not path.exists():
         emit(StepEvent(sweep_id=sweep_id, agent=portal, type="error",
                        message=f"No recorded run for '{category}'", direct_url=PORTALS[portal]["url"]))
         return []
     fx = json.loads(path.read_text())
-    emit(StepEvent(sweep_id=sweep_id, agent=portal, type="started", message=f"Opening {fx['url']}"))
+    when = str(fx.get("recorded_at", ""))[:10]
+    note = f"Replaying the recorded run from {when}: " if labelled else ""
+    emit(StepEvent(sweep_id=sweep_id, agent=portal, type="started", message=f"{note}Opening {fx['url']}"))
     for s in fx["steps"]:
         await asyncio.sleep(random.uniform(0.3, 0.8))
         emit(StepEvent(sweep_id=sweep_id, agent=portal, type="step", step=s["step"], message=s["message"]))
@@ -188,6 +211,8 @@ async def sweep_portal(portal: str, category: str, emit: Emit, sweep_id: str = "
     """Sweep one portal for one category, streaming StepEvents. Never raises; errors become events."""
     if fallback_mode():
         return await _replay(portal, category, emit, sweep_id)
+    if portal not in live_portals():
+        return await _replay(portal, category, emit, sweep_id, labelled=True)
 
     url = PORTALS[portal]["url"]
     emit(StepEvent(sweep_id=sweep_id, agent=portal, type="started", message=f"Opening {url}"))
@@ -203,15 +228,17 @@ async def sweep_portal(portal: str, category: str, emit: Emit, sweep_id: str = "
         return []
 
     result = run["result"]
-    if result.get("blocked"):
+    bids = to_listings(portal, result.get("bids") or [])
+    reason = result.get("blocked_reason")
+    if result.get("blocked") and not bids and is_real_block(reason):
         emit(StepEvent(sweep_id=sweep_id, agent=portal, type="error", step=len(run["steps"]),
-                       message=f"Blocked: {_short_reason(result.get('blocked_reason'))}. Open on portal.",
-                       direct_url=url))
+                       message=f"Blocked: {_short_reason(reason)}. Open on portal.", direct_url=url))
         return []
-
-    bids = to_listings(portal, result.get("bids", []))
+    if result.get("blocked") and not bids:
+        log.info("%s: agent said blocked but gave no access problem (%r): treating as no relevant bids", portal, reason)
+    msg = f"Found {len(bids)} bids" if bids else "No relevant open bids on the first result pages"
     emit(StepEvent(sweep_id=sweep_id, agent=portal, type="result", step=len(run["steps"]),
-                   message=f"Found {len(bids)} bids", count=len(bids)))
+                   message=msg, count=len(bids)))
     return bids
 
 

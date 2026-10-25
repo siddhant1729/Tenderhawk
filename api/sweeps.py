@@ -14,7 +14,7 @@ import json
 import logging
 import os
 
-from agents.client import FIXTURES_DIR, fetch_doc_text, sweep_portal
+from agents.client import live_portals, FIXTURES_DIR, fetch_doc_text, sweep_portal
 from agents.goals import PORTALS
 from agents.schemas import BidListing, StepEvent
 from api import llm
@@ -38,8 +38,13 @@ LIVE_MAX_KEYWORDS = int(os.getenv("LIVE_MAX_KEYWORDS", "1"))
 
 
 def _keywords(profile: Profile) -> list[str]:
-    kws = [k.strip() for k in (profile.keywords or profile.products[:2]) if k and k.strip()]
-    return kws if fallback_mode() else kws[:LIVE_MAX_KEYWORDS]
+    return [k.strip() for k in (profile.keywords or profile.products[:2]) if k and k.strip()]
+
+
+def _portal_keywords(portal: str, keywords: list[str]) -> list[str]:
+    """Live runs are billed, so they search the first LIVE_MAX_KEYWORDS; replays are free and use them all."""
+    live = not fallback_mode() and portal in live_portals()
+    return keywords[:LIVE_MAX_KEYWORDS] if live else keywords
 
 
 def _load_keywords(profile_id: int) -> list[str]:
@@ -216,7 +221,7 @@ async def run_sweep(sweep_id: str, profile_id: int) -> None:
         corr_card = card_emitter(sweep_id, publish)
         corr_card("started", "Waiting for bids from the portals", None)
         per_portal = await asyncio.gather(
-            *(_sweep_portal_all_keywords(sweep_id, p, keywords) for p in PORTALS))
+            *(_sweep_portal_all_keywords(sweep_id, p, _portal_keywords(p, keywords)) for p in PORTALS))
         bids = [b for bs in per_portal for b in bs]
         all_ids, new_ids = await asyncio.to_thread(upsert_tenders, bids)
 
