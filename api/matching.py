@@ -50,7 +50,7 @@ def match_profile(profile_id: int, only: list[int] | None = None) -> dict:
         q = select(Tender) if only is None else select(Tender).where(Tender.id.in_(only))
         tenders = db.scalars(q).all()
         if not tenders:
-            return {"counts": {}, "new_match_ids": []}
+            return {"counts": {}, "relevant": 0, "total": 0, "method": "keywords", "new_match_ids": []}
 
         use_cosine = p.embedding is not None and all(t.embedding is not None for t in tenders)
         if use_cosine:
