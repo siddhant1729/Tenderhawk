@@ -103,6 +103,10 @@ async def send_whatsapp(to: str, body: str, *, transport: httpx.AsyncBaseTranspo
         except ValueError:
             msg = r.text
         log.warning("twilio %s: %s", r.status_code, msg)
+        if "contentsid" in str(msg).replace(" ", "").lower() or "63016" in str(msg) or "63015" in str(msg):
+            # Outside the 24 h session Twilio only sends approved templates: the phone must message the sandbox.
+            return ("failed: the phone hasn't messaged the Twilio sandbox in the last 24 h. Send the sandbox "
+                    "join message (e.g. 'join <code>') to +1 415 523 8886 on WhatsApp, then retry")
         return f"failed: {msg}"[:300]
     return "sent"
 

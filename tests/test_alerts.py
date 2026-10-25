@@ -242,3 +242,10 @@ def test_preview_is_the_message_and_sends_nothing(monkeypatch):
     monkeypatch.setattr(alerts, "send_whatsapp", boom)
     assert alerts.preview_match(1) == alerts.format_message(m) and "Metal Shelving Racks" in alerts.preview_match(1)
     assert alerts.preview_match(2) is None
+
+
+def test_sandbox_session_expired_gets_a_plain_instruction(monkeypatch):
+    _twilio_env(monkeypatch)
+    t = httpx.MockTransport(lambda r: httpx.Response(400, json={"message": "ContentSid Required"}))
+    res = asyncio.run(alerts.send_whatsapp("+91", "hi", transport=t))
+    assert res.startswith("failed: the phone hasn't messaged the Twilio sandbox") and "+1 415 523 8886" in res
