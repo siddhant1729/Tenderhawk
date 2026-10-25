@@ -76,7 +76,7 @@ def test_fallback_mode_reads_fixture_docs_only(monkeypatch):
 
 def test_agent_limits_never_send_max_steps():
     """The account rejects a custom max_steps with HTTP 403, which would fail every live sweep."""
-    assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 300
+    assert client.AGENT_LIMITS.max_steps is None and client.AGENT_LIMITS.max_duration_seconds == 480
 
 
 def test_session_bound_portal_links_are_dropped():
@@ -169,3 +169,25 @@ def test_real_notices_are_found(text):
 def test_notice_about_another_bid_on_the_same_page_is_ignored():
     text = "GEM/2026/B/8171651 Steel almirah. " + "x" * 400 + " Corrigendum 1 for GEM/2026/B/9999999"
     assert not client.is_corrigendum_notice(text, "GEM/2026/B/8171651")
+
+
+def test_agent_runs_queue_locally_beyond_the_plan_concurrency(monkeypatch):
+    """A 3rd run would wait in TinyFish's queue and burn our timeout: it waits for a local slot instead."""
+    monkeypatch.setattr(client, "_slots", asyncio.Semaphore(2))
+    running, peak, waits = 0, 0, []
+
+    async def fake_run(portal, category, on_step):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return {"result": {"bids": []}}
+
+    monkeypatch.setattr(client, "_run_agent", fake_run)
+
+    async def sweep():
+        await asyncio.gather(*(client.run_agent(p, "rack", lambda n, m, p=p: waits.append(p))
+                               for p in ("gem", "cppp", "haryana")))
+    asyncio.run(sweep())
+    assert peak == 2 and waits == ["haryana"]

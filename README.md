@@ -229,6 +229,7 @@ FALLBACK_MODE=true python -m agents.cli gem "storage rack"
 | `LLM_EFFORT`, `LLM_MAX_DOC_CHARS`, `LLM_CONCURRENCY` | Parser reasoning effort; characters sent per document and documents parsed at once (free tier: 8k tokens/min) |
 | `DATABASE_URL`, `REDIS_URL` | Postgres + pgvector, Redis pub/sub for SSE |
 | `LIVE_MAX_KEYWORDS` | Profile keywords per live sweep (each is a billed agent run per portal) |
+| `TINYFISH_CONCURRENCY`, `AGENT_TIMEOUT` | Agent runs at once (the plan allows 2; extra runs wait locally, GeM first) and seconds to wait for one run (default 540) |
 | `SCHEDULER_ENABLED`, `CORRIGENDA_HOUR` | Daily corrigenda job (07:00 IST by default) |
 | `NEXT_PUBLIC_API_URL` | Where the dashboard calls the API (baked into the web build: rebuild after changing it) |
 | `WEB_ORIGINS` | Browser origins the API allows (CORS), comma-separated; default `http://localhost:3000,http://127.0.0.1:3000`. Add the laptop's LAN address if the dashboard is opened from another device |
@@ -255,7 +256,7 @@ tests/       pytest suite for sweeps, eligibility, matcher, corrigenda
 - 🚫 **Never bypass a captcha.** A blocked portal is skipped and the user gets a direct link.
 - 👀 **Read-only.** TenderHawk never submits or participates in a bid.
 - 🇮🇳 Agent runs go through an Indian proxy, because government portals drop connections from foreign IPs.
-- ⏱️ Agent runs stop at 330 s (TinyFish's own 300 s cap is soft), so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
+- ⏱️ At most 2 agents run at once (the plan's limit; GeM starts first, the rest wait locally, not in TinyFish's queue), and each run stops at 540 s (TinyFish's own 480 s cap is soft), so a stuck portal becomes an error card with a direct link, not a sweep that never ends.
 - 🔑 Config comes from env vars only; secrets never enter the repo.
 
 ## Who it's for

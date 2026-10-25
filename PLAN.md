@@ -31,8 +31,9 @@ Everything we build serves this script. If a task doesn't help this demo, it wai
 | `output_schema` rejects `description` keys (HTTP 400) | Field hints live in the goal text (`agents/goals.py`) |
 | GeM's search for "steel rack" returns no rack bids; buyers write "storage rack" / "Metal Shelving Racks" | Keyword choice decides whether a live sweep finds anything (see §7); goals match on items/title, never on buyer names |
 | Fetch API → GeM bid docs gives `proxy_error` (Fetch has no proxy option). A TinyFish agent can't read them either (run `b4065139`, 2026-10-24: 20 steps, 110 s, no text; the browser downloads the PDF) | `agents.fetch_doc_text` falls back to a direct PDF download over the Indian connection (`source=direct`) |
-| Custom `max_steps` is rejected: HTTP 403 "Your account is not enabled for custom max steps yet". `max_duration_seconds=300` is accepted but soft (runs took 352 s and 471 s) | `AGENT_LIMITS` caps time only; `agents/` also stops waiting at `AGENT_TIMEOUT` (330 s) → error card with the portal link |
-| One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 300 s (`AGENT_LIMITS`); keep goals cheap |
+| Custom `max_steps` is rejected: HTTP 403 "Your account is not enabled for custom max steps yet". `max_duration_seconds` is accepted but soft (runs took 352 s, 471 s, 512 s) | `AGENT_LIMITS` caps time only (480 s); `agents/` also stops waiting at `AGENT_TIMEOUT` (540 s) → error card with the portal link |
+| One agent run with tooltip/detail clicks ran 10+ min | Runs capped at 480 s (`AGENT_LIMITS`); keep goals cheap |
+| The plan runs 2 agents at once: a 3rd waited 197 s in TinyFish's queue and that wait counted against our 330 s timeout, so a GeM run that found 6 bids (385 s) was thrown away | `agents/` queues runs locally (`TINYFISH_CONCURRENCY`, default 2; GeM first), so the timeout only counts running time; cap raised to 480/540 s |
 
 ---
 
@@ -79,7 +80,7 @@ async def search_corrigenda(bid: BidListing) -> list[Corrigendum]  # TinyFish Se
 ```
 - `sweep_id` is stamped on every emitted `StepEvent`; the API passes the id it publishes to Redis.
 - Fixture file names come from the keyword: `category.lower()`, non-alphanumerics → `_` (e.g. `"steel rack"` → `gem_steel_rack.json`).
-- Every agent run goes through an Indian proxy and is capped at 300 s (a custom step cap is rejected by TinyFish: beta only); a capped run ends as an `error` event with `direct_url`.
+- Every agent run goes through an Indian proxy and is capped at 480 s (at most 2 at once) (a custom step cap is rejected by TinyFish: beta only); a capped run ends as an `error` event with `direct_url`.
 - Bid documents: TinyFish Fetch first; if it returns nothing, a direct HTTPS download of the PDF (only hosts of the 3 swept portals, PDF only, ≤15 MB). `source` (`fetch` / `direct` / `fixture`) is stored as `tenders.doc_source` and shown in `/matches/{id}` → `provenance`.
 - In `FALLBACK_MODE`, `sweep_portal` replays `delivery/fixtures/{portal}_{category}.json`. It emits the recorded steps with 0.3–0.8 s delays.
 - Unusable run result: retry the run once. Invalid bid: log and skip that bid. One bad bid never fails a sweep.

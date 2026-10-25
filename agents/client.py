@@ -34,9 +34,14 @@ INDIA_PROXY = ProxyConfig(enabled=True, country_code="IN")
 
 # Hard cap so a looping agent becomes a clean error card instead of a sweep that never ends (and keeps billing).
 # Time only: a custom max_steps is rejected (HTTP 403 "not enabled for custom max steps", beta-only).
-AGENT_LIMITS = AgentConfig(max_duration_seconds=300)
-# TinyFish treats that as a soft limit (a Haryana run went 352 s), so we also stop waiting ourselves.
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "330"))
+# Successful GeM runs took 385 s and 471 s, so 300 s threw real bids away.
+AGENT_LIMITS = AgentConfig(max_duration_seconds=480)
+# TinyFish treats that as a soft limit (a Haryana run went 512 s), so we also stop waiting ourselves.
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "540"))
+# The plan runs 2 agents at once; a 3rd sits in TinyFish's queue (seen: 197 s) and that wait ate our timeout.
+# Queue here instead, so the timeout only counts running time. Callers start GeM first (PORTALS order).
+TINYFISH_CONCURRENCY = int(os.getenv("TINYFISH_CONCURRENCY", "2"))
+_slots = asyncio.Semaphore(TINYFISH_CONCURRENCY)
 
 # Direct downloads: only bid documents on the portals we sweep, only over HTTPS, only PDFs of sane size.
 DOC_HOSTS = {urlparse(p["url"]).hostname for p in PORTALS.values()}
@@ -100,6 +105,13 @@ async def run_agent(portal: str, category: str, on_step: Callable[[int, str], No
 
     Returns {"run_id", "url", "goal", "steps", "result"} where result is the raw agent JSON.
     """
+    if _slots.locked():
+        on_step(0, f"Waiting for a free TinyFish agent ({TINYFISH_CONCURRENCY} run at a time)")
+    async with _slots:
+        return await _run_agent(portal, category, on_step)
+
+
+async def _run_agent(portal: str, category: str, on_step: Callable[[int, str], None]) -> dict:
     url, goal = goal_for(portal, category)
     last_error = "no result"
     for attempt in (1, 2):
